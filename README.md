@@ -6,11 +6,11 @@ Website Next.js để chia sẻ bộ đề qua Supabase, **mọi người truy c
 
 - Nhập 2 nguồn: **đề** và **đáp án** qua DOCX, PDF **có chữ**, TXT, CSV hoặc ZIP chứa các file hỗ trợ; cũng có thể dán văn bản.
 - Tách câu hỏi đánh số `1. ...`, `Câu 1: ...`, `Question 1: ...` và các phương án ở **đầu dòng** `A. ...`, `B. ...`, `C. ...`, `D. ...` (không bắt buộc đủ 4).
-- Ghép đáp án qua số câu (`1.A 2.B...`), lọc trùng theo nội dung chuẩn hóa. Nếu một đáp án trỏ tới lựa chọn không có trong đề, sẽ đánh dấu chưa có đáp án và cảnh báo.
+- Ghép đáp án qua số câu (`1.A 2 B 3.C,E...`), lọc trùng theo nội dung chuẩn hóa. Nếu một đáp án trỏ tới lựa chọn không có trong đề, sẽ đánh dấu chưa có đáp án và cảnh báo.
 - Kiểm tra/sửa câu hỏi, phương án và đáp án trước khi lưu.
 - Chọn đáp án, chấm điểm, xem câu sai, luyện lại câu sai; tùy chọn trộn câu và phương án.
 - Nút sao chép câu hỏi để mang sang ChatGPT hỏi thêm; không phát sinh phí API AI.
-- Dữ liệu bộ đề nằm trên Supabase nên đổi thiết bị vẫn thấy. Kết quả làm bài hiện chưa lưu chung.
+- Dữ liệu bộ đề nằm trên Supabase nên đổi thiết bị vẫn thấy. Tiến trình tự lưu trong localStorage của trình duyệt; mở lại cùng trình duyệt sẽ có nút Tiếp tục, có thể Reset. Tiến trình không tự đồng bộ giữa các thiết bị hoặc người dùng.
 
 **Giới hạn:** Không hỗ trợ OCR ảnh hoặc PDF scan; PDF có chữ nhưng bố cục phức tạp có thể tách sai, cần kiểm tra trước khi lưu. File `.doc` cũ phải đổi sang `.docx`. Giới hạn tải dữ liệu ~4MB/mỗi lượt nhập để tương thích Vercel Functions.
 
@@ -112,3 +112,10 @@ Lưu ý: Mã nguồn được soạn và bộ tách câu được kiểm thử b
 - Khi đã kiểm tra, không thể thay đổi câu trả lời của lượt đó; bấm **Làm lại cả đề** để luyện lại.
 - Nếu đề chưa có key, website thông báo chưa có đáp án, không tự đoán.
 - Toàn bộ xử lý diễn ra trong trình duyệt; không thay đổi cấu trúc Supabase.
+
+## Cập nhật V5
+- Lưu tiến trình làm bài trong trình duyệt hiện tại (localStorage), có nút **Tiếp tục**, **Làm lại**, **Reset**. Bộ đề trên Supabase vẫn chung; tiến trình học mỗi thiết bị là riêng.
+- Trong **Sửa** bộ đề có phần **Nhập lại file đáp án**: có thể ghép đáp án vào bộ đề đã lưu mà không tải lại đề. Sau khi ghép, phải bấm **Lưu bộ đề lên thư viện chung**.
+- Hỗ trợ đáp án `1.A`, `1 A`, `2.B,D`, `Câu 3: A và C`, dạng bảng Word trích xuất thành dòng. Nếu là file ảnh/PDF scan không có text thì cần chuyển sang văn bản.
+- Không tự đoán đáp án khi không nhận diện được.
+- Khi nâng cấp project cũ: thay toàn bộ các tệp nguồn từ ZIP, **không thay** `.env.local`. Không cần thay SQL Supabase.

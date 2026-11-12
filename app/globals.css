@@ -3,3 +3,5 @@
 
 /* Phản hồi ngay khi trả lời từng câu */
 .answer-feedback{margin:14px 0;padding:14px 16px;border-radius:12px;line-height:1.7}.answer-feedback.is-correct{background:#e8f8ef;color:#126b47;border:1px solid #9fdfbd}.answer-feedback.is-wrong{background:#fff1f1;color:#b4233c;border:1px solid #f1b0bb}.answer-feedback.ungraded{background:#fff7e3;color:#895f17;border:1px solid #e8d69d}.choice:disabled{cursor:default;opacity:1}
+
+.answer-import{margin:20px 0;padding:18px;border:1px solid #c6c9f5;border-radius:14px;background:#f5f5ff;display:grid;gap:12px}.answer-import textarea{width:100%}

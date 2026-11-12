@@ -6,16 +6,18 @@ const blank=():Record<Choice,string>=>Object.fromEntries(CHOICES.map(c=>[c,'']))
 /** Parses "1.A 2.C", "1.A,C", "2: B và D", "3. AC", "Câu 4: A và E". */
 export function parseAnswers(raw:string):Map<number,Choice[]>{
  const out=new Map<number,Choice[]>();
- const normalized=raw.replace(/\r/g,'\n');
- const re=/(?:^|[\s;|])(?:câu|question|q)?\s*(\d{1,4})\s*[.):=\-]\s*/gim;
- const matches=[...normalized.matchAll(re)];
+ const normalized=raw.replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').replace(/[\t]+/g,' ');
+ // Accept: 1.A; 1 A; Câu 2: B,D; 3) AC; and Word-table cells split by newlines.
+ // Match only numbered entries. Never guess an answer from question text.
+ const marker=/(?:^|[\s;|])(?:câu\s*|question\s*|q\s*)?(\d{1,4})\s*(?:[.):=\-]\s*|\s+)(?=(?:đáp\s*án\s*[:\-]?\s*)?[A-H](?![a-zà-ỹ]))/gim;
+ const matches=[...normalized.matchAll(marker)];
  for(let i=0;i<matches.length;i++){
-  const m=matches[i];const tail=normalized.slice((m.index||0)+m[0].length,i+1<matches.length?matches[i+1].index:undefined);
-  const first=tail.split(/\n|[;|]/)[0].trim();
-  // Only read the opening answer tokens, never attempt to derive answers from explanations.
-  const match=first.match(/^([A-H](?:\s*(?:,|\+|&|\/|\bvà\b|\band\b|\s)\s*[A-H])*)/i);
-  if(!match)continue;
-  const letters=[...new Set((match[1].toUpperCase().match(/[A-H]/g)||[]))] as Choice[];
+  const m=matches[i];
+  const tail=normalized.slice((m.index||0)+m[0].length,i+1<matches.length?matches[i+1].index:undefined).trimStart();
+  const candidate=tail.replace(/^đáp\s*án\s*[:\-]?\s*/i,'');
+  const first=candidate.match(/^([A-H](?:\s*(?:,|;|\+|&|\/|và|and|\s)\s*[A-H])*)(?![a-zà-ỹ])/i);
+  if(!first)continue;
+  const letters=[...new Set((first[1].toUpperCase().match(/[A-H]/g)||[]))] as Choice[];
   if(letters.length)out.set(Number(m[1]),letters);
  }
  return out;

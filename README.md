@@ -119,3 +119,7 @@ Lưu ý: Mã nguồn được soạn và bộ tách câu được kiểm thử b
 - Hỗ trợ đáp án `1.A`, `1 A`, `2.B,D`, `Câu 3: A và C`, dạng bảng Word trích xuất thành dòng. Nếu là file ảnh/PDF scan không có text thì cần chuyển sang văn bản.
 - Không tự đoán đáp án khi không nhận diện được.
 - Khi nâng cấp project cũ: thay toàn bộ các tệp nguồn từ ZIP, **không thay** `.env.local`. Không cần thay SQL Supabase.
+
+## V6: Nhập một file JSON có sẵn câu hỏi và đáp án
+
+Vào **Thêm bộ đề → Nhập 1 file JSON QuizStudy**, chọn `DBS401.json`, `NWC303.json` hoặc `MLN122.json`, kiểm tra trước khi bấm **Lưu bộ đề**. Sau khi lưu, web vẫn cho phép sửa từng câu. Nút **JSON** trong thư viện cho phép sao lưu bộ đề đã lưu thành file JSON. Giữ nguyên kết nối Supabase cũ; không phải chạy lại SQL.

@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useMemo,useState} from 'react';
-import {BookOpen,Cloud,FilePlus2,Trash2,Pencil,ArrowLeft,CheckCircle2,RotateCcw,Upload,Copy,Shuffle,Save,Search} from 'lucide-react';
+import {BookOpen,Cloud,FilePlus2,Trash2,Pencil,ArrowLeft,CheckCircle2,RotateCcw,Upload,Copy,Shuffle,Save,Search,Download} from 'lucide-react';
 import type {Choice,Deck,Question} from '../lib/types';
 import {CHOICES,answerOf,equalsAnswer} from '../lib/types';
 const C:Choice[]=[...CHOICES];
@@ -56,6 +56,45 @@ export default function Page(){
   try{localStorage.removeItem(storageKey(deck.id));}catch{}
   setPicked({});setChecked({});setIndex(0);setWrongOnly(false);setScreen('quiz');setNotice('Đã đặt lại tiến trình làm bài.');
  };
+ const importJson=async(file:File)=>{
+  setError('');setNotice('');setLoading(true);
+  try{
+   if(!file.name.toLowerCase().endsWith('.json'))throw Error('Hãy chọn file QuizStudy dạng .json.');
+   if(file.size>12*1024*1024)throw Error('File quá lớn (tối đa 12 MB).');
+   const obj:unknown=JSON.parse(await file.text());
+   if(!obj||typeof obj!=='object'||Array.isArray(obj))throw Error('JSON không phải bộ đề QuizStudy.');
+   const data=obj as Record<string,unknown>;
+   if(!Array.isArray(data.questions)||!data.questions.length||data.questions.length>2000)throw Error('File thiếu danh sách questions hoặc vượt quá 2000 câu.');
+   const parsed:Question[]=data.questions.map((raw:unknown,i:number)=>{
+    if(!raw||typeof raw!=='object')throw Error(`Câu ${i+1} không hợp lệ.`);
+    const q=raw as Record<string,unknown>;
+    const opts=q.options;
+    if(typeof q.text!=='string'||!q.text.trim()||!opts||typeof opts!=='object'||Array.isArray(opts))throw Error(`Câu ${i+1} thiếu nội dung hoặc options.`);
+    const options=Object.fromEntries(C.map(k=>[k,typeof (opts as Record<string,unknown>)[k]==='string'?(opts as Record<string,string>)[k]:''])) as Record<Choice,string>;
+    if(available({options} as Question).length<2)throw Error(`Câu ${i+1} phải có ít nhất 2 lựa chọn.`);
+    const rawAnswer=q.answer;
+    const a=Array.isArray(rawAnswer)?rawAnswer:(typeof rawAnswer==='string'?(rawAnswer.match(/[A-H]/gi)||[]):[]);
+    const answer=[...new Set(a.map(x=>String(x).toUpperCase()))].filter((x):x is Choice=>C.includes(x as Choice));
+    const invalid=answer.filter(x=>!options[x]?.trim());
+    if(invalid.length)throw Error(`Câu ${i+1}: đáp án ${invalid.join(', ')} không có lựa chọn tương ứng.`);
+    return {id:typeof q.id==='string'&&q.id.length<100?q.id:`json-${i+1}-${crypto.randomUUID()}`,number:Number(q.number)||i+1,text:q.text,options,answer,multiple:Boolean(q.multiple)||answer.length>1};
+   });
+   const numbers=new Set<number>();
+   for(const q of parsed){if(numbers.has(q.number))throw Error(`Số câu ${q.number} bị trùng trong JSON.`);numbers.add(q.number);}
+   setDraft(parsed);setDeck(null);setEditing(false);
+   setTitle(typeof data.title==='string'&&data.title.trim()?data.title:file.name.replace(/\.json$/i,''));
+   setSubject(typeof data.subject==='string'&&data.subject.trim()?data.subject:(file.name.split('_')[0]||'Khác'));
+   setScreen('edit');
+   const missing=parsed.filter(q=>!answerOf(q).length).length;
+   const multi=parsed.filter(q=>q.multiple).length;
+   setNotice(`Đã đọc ${parsed.length} câu từ JSON; ${multi} câu chọn nhiều; ${missing} câu chưa có đáp án. Kiểm tra rồi bấm Lưu để đăng chung lên Supabase.`);
+  }catch(e){setError('Không nhập được JSON: '+(e as Error).message);}finally{setLoading(false);}
+ };
+ const exportJson=(d:Deck)=>{
+  const obj={format:'quizstudy-v1',title:d.title,subject:d.subject,questions:d.questions.map(q=>({number:q.number,text:q.text,options:Object.fromEntries(available(q).map(c=>[c,q.options[c]])),answer:answerOf(q),multiple:q.multiple}))};
+  const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+  const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=(d.subject||'QuizStudy').replace(/[^a-z0-9_-]/gi,'_')+'_QuizStudy.json';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+ };
  const importing=async()=>{setError('');setNotice('');if(!(examFiles.length||examText.trim())||!(keyFiles.length||keyText.trim())){setError('Cần có cả đề và đáp án (file hoặc văn bản dán).');return;}
  setLoading(true);try{const fd=new FormData();for(const f of examFiles)fd.append('exams',f);for(const f of keyFiles)fd.append('answers',f);if(examText.trim())fd.append('examText',examText);if(keyText.trim())fd.append('answerText',keyText);
  const result=await request('/api/import',{method:'POST',body:fd});if(!result.questions.length)throw Error(result.warning||'Không có câu hỏi hợp lệ.');setDraft(result.questions);setEditing(false);setTitle(examFiles[0]?.name.replace(/\.[^.]+$/,'')||'Đề ôn tập mới');setSubject('Khác');setScreen('edit');setNotice(result.warning);
@@ -95,9 +134,9 @@ export default function Page(){
    <div className="row between" style={{marginBottom:18}}><h2 style={{margin:0}}>Thư viện đề thi ({decks.length})</h2><button className="button" onClick={()=>{setScreen('import');setError('');setNotice('');}}><FilePlus2 size={17}/>Thêm bộ đề</button></div>
    <div className="row" style={{marginBottom:16}}><div className="search"><Search size={17}/><input placeholder="Tìm môn học, tên bộ đề..." value={query} onChange={e=>setQuery(e.target.value)}/></div></div>
    <div className="panel"><div className="row" style={{gap:22}}><label className="toggle"><input type="checkbox" checked={mixQuestions} onChange={e=>setMixQuestions(e.target.checked)}/>Trộn thứ tự câu hỏi</label><label className="toggle"><input type="checkbox" checked={mixAnswers} onChange={e=>setMixAnswers(e.target.checked)}/>Trộn thứ tự phương án</label></div><p className="muted" style={{marginBottom:0}}>Mọi thay đổi của bộ đề sẽ được lưu chung trên Supabase. Tiến trình làm bài tự lưu trên trình duyệt này và có thể tiếp tục sau khi tải lại trang.</p></div>
-   <div className="decks">{visibleDecks.map(d=><article className="panel deck" key={d.id} style={{marginBottom:0}}><div><strong>{d.title}</strong><small>{d.subject||'Khác'} · {d.questions.length} câu · {d.questions.filter(x=>answerOf(x).length>0).length} đáp án</small></div><div className="topActions"><button className="button small" onClick={()=>savedProgress[d.id]?resume(d):start(d)}>{savedProgress[d.id]?"Tiếp tục":"Làm bài"}</button>{savedProgress[d.id]&&<button className="button ghost small" onClick={()=>{if(!confirm("Xóa tiến trình làm bài đã lưu cho bộ đề này?"))return;try{localStorage.removeItem(storageKey(d.id));}catch{}setSavedProgress(x=>{const next={...x};delete next[d.id];return next;});start(d);}}>Làm lại</button>}<button className="button ghost small" onClick={()=>edit(d)} title="Sửa đề"><Pencil size={15}/> Sửa</button><button className="button danger small" disabled={loading} onClick={()=>remove(d)} title="Xóa đề"><Trash2 size={15}/></button></div></article>)}{visibleDecks.length===0&&<div className="panel muted">{decks.length?'Không tìm thấy bộ đề phù hợp.':'Chưa có bộ đề. Hãy nhấn “Thêm bộ đề” để bắt đầu.'}</div>}</div>
+   <div className="decks">{visibleDecks.map(d=><article className="panel deck" key={d.id} style={{marginBottom:0}}><div><strong>{d.title}</strong><small>{d.subject||'Khác'} · {d.questions.length} câu · {d.questions.filter(x=>answerOf(x).length>0).length} đáp án</small></div><div className="topActions"><button className="button small" onClick={()=>savedProgress[d.id]?resume(d):start(d)}>{savedProgress[d.id]?"Tiếp tục":"Làm bài"}</button>{savedProgress[d.id]&&<button className="button ghost small" onClick={()=>{if(!confirm("Xóa tiến trình làm bài đã lưu cho bộ đề này?"))return;try{localStorage.removeItem(storageKey(d.id));}catch{}setSavedProgress(x=>{const next={...x};delete next[d.id];return next;});start(d);}}>Làm lại</button>}<button className="button ghost small" onClick={()=>exportJson(d)} title="Tải về JSON để sao lưu"><Download size={15}/> JSON</button><button className="button ghost small" onClick={()=>edit(d)} title="Sửa đề"><Pencil size={15}/> Sửa</button><button className="button danger small" disabled={loading} onClick={()=>remove(d)} title="Xóa đề"><Trash2 size={15}/></button></div></article>)}{visibleDecks.length===0&&<div className="panel muted">{decks.length?'Không tìm thấy bộ đề phù hợp.':'Chưa có bộ đề. Hãy nhấn “Thêm bộ đề” để bắt đầu.'}</div>}</div>
   </>}
-  {screen==='import'&&<div className="quizWrap"><button className="button ghost small" onClick={close}><ArrowLeft size={15}/>Thư viện</button><div className="panel" style={{marginTop:18}}><h2>Thêm đề mới</h2><p className="muted">Website tách câu hỏi A/B/C/D và ghép đáp án theo số thứ tự, hoàn toàn không gọi AI. Hỗ trợ DOCX, PDF có chữ, TXT, CSV và ZIP chứa các file đó. Không đọc được ảnh hoặc PDF scan.</p>
+  {screen==='import'&&<div className="quizWrap"><button className="button ghost small" onClick={close}><ArrowLeft size={15}/>Thư viện</button><div className="panel" style={{marginTop:18}}><h2>Thêm đề mới</h2><div className="answer-import"><strong>Nhập 1 file JSON QuizStudy (khuyên dùng)</strong><p className="muted">File đã gồm câu hỏi + lựa chọn + đáp án đơn/nhiều. Chọn một file, kiểm tra trước khi đăng. Không cần AI/API, không cần file đáp án riêng.</p><input type="file" accept=".json,application/json" disabled={loading} onChange={e=>{const f=e.target.files?.[0];if(f)void importJson(f);e.currentTarget.value="";}}/></div><hr className="divider"/><h3>Hoặc nhập theo cách cũ: đề + đáp án</h3><p className="muted">Website tách câu hỏi A/B/C/D và ghép đáp án theo số thứ tự, hoàn toàn không gọi AI. Hỗ trợ DOCX, PDF có chữ, TXT, CSV và ZIP chứa các file đó. Không đọc được ảnh hoặc PDF scan.</p>
    <label className="field"><span className="field-title">1. File đề thi</span><div className="filezone"><input type="file" multiple accept=".docx,.pdf,.txt,.md,.csv,.zip" onChange={e=>setExamFiles(Array.from(e.target.files||[]))}/><small>Chọn một hoặc nhiều file đề</small></div></label>
    <label className="field"><span className="field-title">2. File đáp án</span><div className="filezone"><input type="file" multiple accept=".docx,.pdf,.txt,.md,.csv,.zip" onChange={e=>setKeyFiles(Array.from(e.target.files||[]))}/><small>Ví dụ: 1.A 2.C 3.A,C (chọn nhiều đáp án)</small></div></label>
    <details><summary>Hoặc dán văn bản đề và đáp án trực tiếp</summary><label className="field"><span className="field-title">Nội dung đề</span><textarea rows={7} value={examText} onChange={e=>setExamText(e.target.value)} placeholder={'1. Câu hỏi...\nA. Đáp án A\nB. Đáp án B\nC. Đáp án C\nD. Đáp án D'}/></label><label className="field"><span className="field-title">Nội dung đáp án</span><textarea rows={4} value={keyText} onChange={e=>setKeyText(e.target.value)} placeholder="1.B 2.A,C 3.B và D"/></label></details>

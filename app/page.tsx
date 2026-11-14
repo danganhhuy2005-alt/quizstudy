@@ -1,6 +1,6 @@
 'use client';
-import {useEffect,useMemo,useState} from 'react';
-import {BookOpen,Cloud,FilePlus2,Trash2,Pencil,ArrowLeft,CheckCircle2,RotateCcw,Upload,Copy,Shuffle,Save,Search,Download} from 'lucide-react';
+import {useEffect,useMemo,useRef,useState} from 'react';
+import {BookOpen,Cloud,FilePlus2,Trash2,Pencil,ArrowLeft,CheckCircle2,RotateCcw,Upload,Copy,Shuffle,Save,Search,Download,Sun,Moon} from 'lucide-react';
 import type {Choice,Deck,Question} from '../lib/types';
 import {CHOICES,answerOf,equalsAnswer} from '../lib/types';
 const C:Choice[]=[...CHOICES];
@@ -19,6 +19,10 @@ async function request(url:string,options?:RequestInit){const r=await fetch(url,
 function noAnswer(q:Question){return answerOf(q).length===0;}
 function available(q:Question):Choice[]{return C.filter(c=>Boolean(q.options[c]?.trim()));}
 export default function Page(){
+ const [theme,setTheme]=useState<'light'|'dark'>('light');
+ const themeInitialized=useRef(false);
+ useEffect(()=>{try{const saved=localStorage.getItem('quizstudy-theme');const preferred=window.matchMedia('(prefers-color-scheme: dark)').matches;setTheme(saved==='light'||saved==='dark'?saved:(preferred?'dark':'light'));}catch{/* storage unavailable */}},[]);
+ useEffect(()=>{if(!themeInitialized.current){themeInitialized.current=true;return;}document.documentElement.dataset.theme=theme;try{localStorage.setItem('quizstudy-theme',theme);}catch{/* storage unavailable */}},[theme]);
  const [decks,setDecks]=useState<Deck[]>([]);const [screen,setScreen]=useState<Screen>('home');
  const [loading,setLoading]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
  const [deck,setDeck]=useState<Deck|null>(null);const [draft,setDraft]=useState<Question[]>([]);
@@ -127,7 +131,7 @@ export default function Page(){
  const copy=async(q:Question)=>{try{await navigator.clipboard.writeText(`${q.text}\n${available(q).map(c=>`${c}. ${q.options[c]}`).join('\n')}`);setNotice('Đã sao chép câu hỏi.');}catch{setError('Trình duyệt không cho sao chép tự động.');}};
  const current=items[index];
  return <main className="layout">
-  <header className="nav"><div className="logo" onClick={close} style={{cursor:'pointer'}}><BookOpen size={23} style={{verticalAlign:'middle',marginRight:8}}/>Quiz<span>Study</span></div><span className="tag"><Cloud size={13} style={{verticalAlign:'middle',marginRight:5}}/>Lưu chung • Không dùng AI</span></header>
+  <header className="nav"><div className="logo" onClick={close} style={{cursor:'pointer'}}><BookOpen size={23} style={{verticalAlign:'middle',marginRight:8}}/>Quiz<span>Study</span></div><div className="header-actions"><span className="tag"><Cloud size={13} style={{verticalAlign:'middle',marginRight:5}}/>Lưu chung • Không dùng AI</span><button type="button" className="theme-switch" aria-label={theme==='dark'?'Chuyển sang chế độ sáng':'Chuyển sang chế độ tối'} title={theme==='dark'?'Chế độ sáng':'Chế độ tối'} aria-pressed={theme==='dark'} onClick={()=>setTheme(t=>t==='dark'?'light':'dark')}>{theme==='dark'?<Sun size={19}/>:<Moon size={19}/>}<span>{theme==='dark'?'Sáng':'Tối'}</span></button></div></header>
   {error&&<div className="notice error" role="alert">{error}</div>}{notice&&<div className="notice" role="status">{notice}</div>}
   {screen==='home'&&<>
    <section className="hero"><h1>Ôn trắc nghiệm theo cách của bạn</h1><p>Upload đề + đáp án một lần. Cả nhóm có thể học, thêm, sửa và xóa từ mọi thiết bị.</p></section>

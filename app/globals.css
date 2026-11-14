@@ -5,3 +5,38 @@
 .answer-feedback{margin:14px 0;padding:14px 16px;border-radius:12px;line-height:1.7}.answer-feedback.is-correct{background:#e8f8ef;color:#126b47;border:1px solid #9fdfbd}.answer-feedback.is-wrong{background:#fff1f1;color:#b4233c;border:1px solid #f1b0bb}.answer-feedback.ungraded{background:#fff7e3;color:#895f17;border:1px solid #e8d69d}.choice:disabled{cursor:default;opacity:1}
 
 .answer-import{margin:20px 0;padding:18px;border:1px solid #c6c9f5;border-radius:14px;background:#f5f5ff;display:grid;gap:12px}.answer-import textarea{width:100%}
+
+
+/* QuizStudy V7: sáng/tối – tương phản tốt cho học bài lâu */
+:root{color-scheme:light}
+html[data-theme="dark"]{color-scheme:dark; background:#101827}
+html[data-theme="dark"] body{background:#101827;color:#e6ebf5}
+.header-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+.theme-switch{display:inline-flex;align-items:center;gap:8px;border:1px solid #cdd4e8;border-radius:12px;padding:9px 12px;background:#fff;color:#35319e;font-weight:750;transition:background .2s,border-color .2s}
+.theme-switch:hover{border-color:#6762e8;background:#f2f1ff}
+.theme-switch:focus-visible{outline:3px solid #818cf8;outline-offset:2px}
+html[data-theme="dark"] .theme-switch{background:#25324b;border-color:#475672;color:#f2e89c}
+html[data-theme="dark"] .theme-switch:hover{background:#344363}
+html[data-theme="dark"] .panel,html[data-theme="dark"] .deck,html[data-theme="dark"] .choice,html[data-theme="dark"] .search,html[data-theme="dark"] .navqs button{background:#1a263b;color:#e6ebf5;border-color:#35435c;box-shadow:none}
+html[data-theme="dark"] .editquestion,html[data-theme="dark"] .filezone,html[data-theme="dark"] .answer-import{background:#202d44;border-color:#546083;color:#e6ebf5}
+html[data-theme="dark"] .textinput,html[data-theme="dark"] .field select,html[data-theme="dark"] textarea,html[data-theme="dark"] .editoption input,html[data-theme="dark"] .search input,html[data-theme="dark"] .editor select,html[data-theme="dark"] input[type="file"]{background:#152035;color:#e6ebf5;border-color:#475774}
+html[data-theme="dark"] input::placeholder,html[data-theme="dark"] textarea::placeholder{color:#a0aec5}
+html[data-theme="dark"] .muted,html[data-theme="dark"] .deck small,html[data-theme="dark"] .filezone small{color:#b1bed1}
+html[data-theme="dark"] .tag,html[data-theme="dark"] .badge{background:#30335c;color:#d8d5ff}
+html[data-theme="dark"] .button.ghost{background:#303457;color:#dedcff}
+html[data-theme="dark"] .button.danger{background:#512c39;color:#ffc1cc}
+html[data-theme="dark"] .choice .letter{background:#333c64;color:#dedcff}
+html[data-theme="dark"] .choice.active,html[data-theme="dark"] .navqs button.done{background:#32355d;border-color:#8782fc}
+html[data-theme="dark"] .choice.correct,html[data-theme="dark"] .answer-feedback.is-correct{background:#133c32;border-color:#349e74;color:#b7f4d5}
+html[data-theme="dark"] .choice.wrong,html[data-theme="dark"] .answer-feedback.is-wrong{background:#4a2631;border-color:#d8738a;color:#ffd3dc}
+html[data-theme="dark"] .answer-feedback.ungraded,html[data-theme="dark"] .notice{background:#45391d;border-color:#927b34;color:#ffe3a1}
+html[data-theme="dark"] .notice.error{background:#482632;color:#ffbdcc}
+html[data-theme="dark"] .progress{background:#34405a}
+html[data-theme="dark"] .divider,html[data-theme="dark"] .review,html[data-theme="dark"] .editor{border-color:#35435c}
+html[data-theme="dark"] .navqs button.current{background:#615be7;color:#fff}
+html[data-theme="dark"] .review-option.success,html[data-theme="dark"] .success{color:#8ae6bd}
+html[data-theme="dark"] .review-option.bad,html[data-theme="dark"] .bad{color:#ff97a7}
+html[data-theme="dark"] .explain{background:#222a4d;color:#e6ebf5}
+html[data-theme="dark"] summary{color:#b7b1ff}
+html[data-theme="dark"] .result{color:#aaa5ff}
+@media(max-width:580px){.header-actions{gap:7px}.theme-switch{padding:8px 10px}.theme-switch span{display:none}}

@@ -2,6 +2,7 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {BookOpen,Cloud,FilePlus2,Trash2,Pencil,ArrowLeft,CheckCircle2,RotateCcw,Upload,Copy,Shuffle,Save,Search,Download,Sun,Moon} from 'lucide-react';
 import type {Choice,Deck,Question} from '../lib/types';
+import {readImageWord,parseAnswerFile,readAnswerKeys} from '../lib/word-image-client';
 import {CHOICES,answerOf,equalsAnswer} from '../lib/types';
 const C:Choice[]=[...CHOICES];
 type Screen='home'|'import'|'edit'|'quiz'|'result';
@@ -44,6 +45,7 @@ export default function Page(){
  const [loading,setLoading]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
  const [deck,setDeck]=useState<Deck|null>(null);const [draft,setDraft]=useState<Question[]>([]);
  const [title,setTitle]=useState('');const [subject,setSubject]=useState('');const [editing,setEditing]=useState(false);
+ const [uploadProgress,setUploadProgress]=useState('');
  const [imageDoc,setImageDoc]=useState<File|null>(null);const [imageKeys,setImageKeys]=useState<File|null>(null);const [imageKeyText,setImageKeyText]=useState('');
  const [examFiles,setExamFiles]=useState<File[]>([]);const [keyFiles,setKeyFiles]=useState<File[]>([]);
  const [examText,setExamText]=useState('');const [keyText,setKeyText]=useState('');
@@ -104,19 +106,28 @@ export default function Page(){
  };
  const importImageDoc=async()=>{
   if(!imageDoc){setError('Hãy chọn file Word chứa ảnh.');return;}
-  if(imageDoc.size>4*1024*1024){setError(`File Word ${(imageDoc.size/1024/1024).toFixed(2)} MB vượt 4 MB. Hãy nén ảnh hoặc chia Word thành nhiều file nhỏ.`);return;}
-  if(imageKeys&&imageKeys.size>4*1024*1024){setError('File đáp án vượt 4 MB.');return;}
-  if(imageDoc.size+(imageKeys?.size||0)+new TextEncoder().encode(imageKeyText).length>4*1024*1024){setError('Tổng dữ liệu Word + đáp án vượt 4 MB. Hãy chia nhỏ file.');return;}
-  setLoading(true);setError('');setNotice('');
+  setLoading(true);setError('');setNotice('');setUploadProgress('Đang đọc ảnh trong Word trên trình duyệt...');
   try{
-   const fd=new FormData();fd.append('docx',imageDoc);
-   if(imageKeys)fd.append('answers',imageKeys);
-   if(imageKeyText.trim())fd.append('answerText',imageKeyText);
-   const res=await request('/api/image-word',{method:'POST',body:fd});
-   setDraft(res.questions as Question[]);setDeck(null);setEditing(false);
+   const imageItems=await readImageWord(imageDoc);
+   let raw=imageKeyText;
+   if(imageKeys)raw+='\n'+await parseAnswerFile(imageKeys);
+   const keys=readAnswerKeys(raw);
+   const results:Question[]=[];
+   for(let i=0;i<imageItems.length;i++){
+    const it=imageItems[i];setUploadProgress(`Đang tải ảnh lên Supabase: ${i+1}/${imageItems.length} (Câu ${it.number})`);
+    const sign=await request('/api/image-word/sign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mime:it.mime,extension:it.extension})}) as {signedUrl:string;publicUrl:string};
+    const upload=await fetch(sign.signedUrl,{method:'PUT',headers:{'Content-Type':it.mime,'x-upsert':'false'},body:it.image});
+    if(!upload.ok){const detail=(await upload.text()).slice(0,250);throw Error(`Không tải được ảnh câu ${it.number} (${upload.status}). ${detail}`);}
+    const options=Object.fromEntries(C.map(c=>[c,C.indexOf(c)<4?c:''])) as Record<Choice,string>;
+    const answer=(keys.get(it.number)||[]).filter(c=>Boolean(options[c]));
+    results.push({id:crypto.randomUUID(),number:it.number,text:`Câu ${it.number}`,imageUrl:sign.publicUrl,options,answer,multiple:answer.length>1});
+   }
+   setDraft(results);setDeck(null);setEditing(false);
    setTitle(imageDoc.name.replace(/\.docx$/i,''));setSubject(imageDoc.name.split('_')[0]||'Khác');setScreen('edit');
-   setNotice(`Đã lấy ${res.questions.length} ảnh; ${res.matched} câu được ghép đáp án. ${res.missing} câu cần chọn đáp án thủ công. Kiểm tra trước khi Lưu.`);
-  }catch(e){setError((e as Error).message);}finally{setLoading(false);}
+   const matched=results.filter(q=>q.answer.length).length;
+   setNotice(`Đã tải ${results.length} ảnh lên Supabase. Ghép đáp án ${matched} câu, còn ${results.length-matched} câu cần chọn thủ công. Kiểm tra rồi Lưu bộ đề.`);
+  }catch(e){setError((e as Error).message+' Các ảnh đã tải thành công trước lỗi vẫn còn trên Storage, nhưng bộ đề chưa lưu.');}
+  finally{setLoading(false);setUploadProgress('');}
  };
  const importJson=async(file:File)=>{
   setError('');setNotice('');setLoading(true);
@@ -204,10 +215,10 @@ export default function Page(){
   </>}
   {screen==='import'&&<div className="quizWrap"><button className="button ghost small" onClick={close}><ArrowLeft size={15}/>Thư viện</button><div className="panel" style={{marginTop:18}}><h2>Thêm đề mới</h2><div className="answer-import"><strong>Nhập 1 file JSON QuizStudy (khuyên dùng)</strong><p className="muted">File đã gồm câu hỏi + lựa chọn + đáp án đơn/nhiều. Chọn một file, kiểm tra trước khi đăng. Không cần AI/API, không cần file đáp án riêng.</p><input type="file" accept=".json,application/json" disabled={loading} onChange={e=>{const f=e.target.files?.[0];if(f)void importJson(f);e.currentTarget.value="";}}/></div><hr className="divider"/><div className="answer-import"><strong>Nhập Word dạng ảnh (không OCR, không AI)</strong>
    <p className="muted">Word theo mẫu: ghi Câu 1, chèn 1 ảnh chứa câu hỏi và A/B/C/D, rồi Câu 2, chèn ảnh tiếp theo. Có thể kèm file đáp án hoặc nhập sau.</p>
-   <label className="field"><span className="field-title">File Word chứa ảnh câu hỏi (.docx)</span><input type="file" accept=".docx" onChange={e=>setImageDoc(e.target.files?.[0]||null)}/></label>
+   <label className="field"><span className="field-title">File Word chứa ảnh câu hỏi (.docx, tối đa 60 MB)</span><input type="file" accept=".docx" onChange={e=>setImageDoc(e.target.files?.[0]||null)}/></label>
    <label className="field"><span className="field-title">File đáp án (tùy chọn)</span><input type="file" accept=".docx,.txt,.csv" onChange={e=>setImageKeys(e.target.files?.[0]||null)}/></label>
    <textarea rows={2} value={imageKeyText} onChange={e=>setImageKeyText(e.target.value)} placeholder="Hoặc dán đáp án: 1.B 2.A,C 3.D"/>
-   <button className="button wide" onClick={importImageDoc} disabled={loading||!imageDoc}><Upload size={16}/>{loading?'Đang xử lý ảnh...':'Đọc Word ảnh để ôn tập'}</button>
+   <button className="button wide" onClick={importImageDoc} disabled={loading||!imageDoc}><Upload size={16}/>{loading?'Đang xử lý ảnh...':'Đọc Word ảnh để ôn tập'}</button>{uploadProgress&&<p className="muted" role="status">{uploadProgress}</p>}
    <p className="muted">Ảnh lưu trong Supabase Storage. Chỉ hỗ trợ DOCX chứa ảnh được chèn thật; không hỗ trợ DOC cũ hoặc hình liên kết ngoài.</p></div><hr className="divider"/><h3>Hoặc nhập theo cách cũ: đề + đáp án</h3><p className="muted">Website tách câu hỏi A/B/C/D và ghép đáp án theo số thứ tự, hoàn toàn không gọi AI. Hỗ trợ DOCX, PDF có chữ, TXT, CSV và ZIP chứa các file đó. Không đọc được ảnh hoặc PDF scan.</p>
    <label className="field"><span className="field-title">1. File đề thi</span><div className="filezone"><input type="file" multiple accept=".docx,.pdf,.txt,.md,.csv,.zip" onChange={e=>setExamFiles(Array.from(e.target.files||[]))}/><small>Chọn một hoặc nhiều file đề</small></div></label>
    <label className="field"><span className="field-title">2. File đáp án</span><div className="filezone"><input type="file" multiple accept=".docx,.pdf,.txt,.md,.csv,.zip" onChange={e=>setKeyFiles(Array.from(e.target.files||[]))}/><small>Ví dụ: 1.A 2.C 3.A,C (chọn nhiều đáp án)</small></div></label>

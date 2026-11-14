@@ -44,3 +44,6 @@ html[data-theme="dark"] .result{color:#aaa5ff}
 /* V8: giữ nguyên ảnh đề và A/B/C/D in sẵn */
 .question-image{display:block;width:100%;height:auto;max-height:1000px;object-fit:contain;border:1px solid #dce2ee;border-radius:12px;margin:12px 0 18px;background:white}
 html[data-theme="dark"] .question-image{background:white;border-color:#526179}
+
+/* V9: chia lượt luyện tập và lịch sử không trùng */
+.study-settings h3{font-size:17px}.study-mode-row{display:flex;gap:22px;flex-wrap:wrap}.batch-controls{display:grid;grid-template-columns:170px minmax(240px,1fr);gap:22px;margin-top:20px;padding:17px;border-radius:14px;background:#f6f7fd;border:1px solid #e0e4f4}.batch-repeat{display:flex;flex-direction:column;gap:10px}.batch-repeat .field-title{margin-bottom:0}.study-settings input[type="radio"]{accent-color:#5853d8;width:18px;height:18px}.study-settings .toggle{line-height:1.5}.study-settings select{cursor:pointer}html[data-theme="dark"] .batch-controls{background:#222e47;border-color:#465371}@media(max-width:640px){.batch-controls{grid-template-columns:1fr}.study-mode-row{flex-direction:column;gap:12px}}

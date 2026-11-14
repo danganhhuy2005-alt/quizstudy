@@ -12,7 +12,7 @@ export function database(){
 export function safeQuestions(input:unknown):Question[]{
  if(!Array.isArray(input)||input.length>2000)throw Error('Danh sách câu hỏi không hợp lệ (tối đa 2000 câu).');
  const seen=new Set<string>();
- return input.map((raw,i)=>{
+ return input.map<Question|null>((raw,i)=>{
   const q=raw as Partial<Question>;
   const options=q?.options as Record<string,string> | undefined;
   if(!q||typeof q.text!=='string'||!q.text.trim()||q.text.length>8000||!options||!choices.some(c=>typeof options[c]==='string'&&options[c].trim())||choices.some(c=>options[c]!==undefined&&(typeof options[c]!=='string'||options[c].length>4000))||(q.imageUrl!==undefined&&(typeof q.imageUrl!=='string'||!q.imageUrl.startsWith((process.env.NEXT_PUBLIC_SUPABASE_URL||'')+'/storage/v1/object/public/quiz-images/'))))throw Error(`Câu ${i+1} thiếu nội dung hoặc không có lựa chọn hợp lệ.`);

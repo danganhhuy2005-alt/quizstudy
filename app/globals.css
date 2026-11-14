@@ -40,3 +40,7 @@ html[data-theme="dark"] .explain{background:#222a4d;color:#e6ebf5}
 html[data-theme="dark"] summary{color:#b7b1ff}
 html[data-theme="dark"] .result{color:#aaa5ff}
 @media(max-width:580px){.header-actions{gap:7px}.theme-switch{padding:8px 10px}.theme-switch span{display:none}}
+
+/* V8: giữ nguyên ảnh đề và A/B/C/D in sẵn */
+.question-image{display:block;width:100%;height:auto;max-height:1000px;object-fit:contain;border:1px solid #dce2ee;border-radius:12px;margin:12px 0 18px;background:white}
+html[data-theme="dark"] .question-image{background:white;border-color:#526179}

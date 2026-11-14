@@ -1,6 +1,6 @@
 export const CHOICES = ['A','B','C','D','E','F','G','H'] as const;
 export type Choice = (typeof CHOICES)[number];
-export type Question = {id:string;number:number;text:string;options:Record<Choice,string>;answer:Choice[];multiple:boolean};
+export type Question = {id:string;number:number;text:string;options:Record<Choice,string>;answer:Choice[];multiple:boolean;imageUrl?:string};
 export type Deck = {id:string;title:string;subject:string;createdAt:string;questions:Question[]};
 /** Backwards compatibility with decks saved when answer was a single letter. */
 export function answerOf(q:Question):Choice[]{

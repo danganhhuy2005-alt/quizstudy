@@ -1,14 +1,17 @@
 'use client';
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {BookOpen,Cloud,FilePlus2,Trash2,Pencil,ArrowLeft,CheckCircle2,RotateCcw,Upload,Copy,Shuffle,Save,Search,Download,Sun,Moon} from 'lucide-react';
+import {BookOpen,Cloud,FilePlus2,Trash2,Pencil,ArrowLeft,CheckCircle2,RotateCcw,Upload,Copy,Shuffle,Save,Search,Download,Sun,Moon,History,ShieldCheck,FileUp} from 'lucide-react';
 import ZoomableImage from './ZoomableImage';
 import type {Choice,Deck,Question} from '../lib/types';
 import {readImageWord,parseAnswerFile,readAnswerKeys} from '../lib/word-image-client';
 import {CHOICES,answerOf,equalsAnswer} from '../lib/types';
 const C:Choice[]=[...CHOICES];
-type Screen='home'|'import'|'edit'|'quiz'|'result';
+type Screen='home'|'import'|'edit'|'quiz'|'result'|'history'|'history-review';
 type QuizItem={q:Question;choices:Choice[]};
-type SavedProgress={deckId:string;questionIds:string[];choiceOrders:Record<string,Choice[]>;picked:Record<string,Choice[]>;checked:Record<string,boolean>;index:number;wrongOnly:boolean;updatedAt:number};
+type SavedProgress={deckId:string;questionIds:string[];choiceOrders:Record<string,Choice[]>;picked:Record<string,Choice[]>;checked:Record<string,boolean>;index:number;wrongOnly:boolean;updatedAt:number;sessionId?:string};
+type HistoryRecord=SavedProgress & {id:string;startedAt:number;finished:boolean};
+const historyKey=(id:string)=>`quizstudy-history-v12:${id}`;
+const BACKUP_PREFIXES=['quizstudy-history-v12:','quizstudy-progress-v5:','quizstudy-studied-v9:','quizstudy-theme'];
 const storageKey=(id:string)=>`quizstudy-progress-v5:${id}`;
 const studiedKey=(id:string)=>`quizstudy-studied-v9:${id}`;
 function readStudied(id:string):string[]{
@@ -21,6 +24,20 @@ function readProgress(id:string):SavedProgress|null{
  }catch{return null;}
 }
 
+function readHistory(id:string):HistoryRecord[]{
+ try{const value=JSON.parse(localStorage.getItem(historyKey(id))||'[]');return Array.isArray(value)?value.filter((v):v is HistoryRecord=>Boolean(v&&typeof v.id==='string'&&Array.isArray(v.questionIds)&&v.deckId===id)):[];}catch{return [];}
+}
+function saveHistory(id:string,record:HistoryRecord){
+ try{
+  const existing=readHistory(id).filter(r=>r.id!==record.id);
+  const history=[record,...existing].sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,80);
+  localStorage.setItem(historyKey(id),JSON.stringify(history));
+ }catch{/* storage full or blocked */}
+}
+function downloadJson(name:string,data:unknown){
+ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
 function shuffle<T>(arr:T[]):T[]{const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 async function request(url:string,options?:RequestInit){
  const r=await fetch(url,{cache:'no-store',...options});
@@ -53,14 +70,20 @@ export default function Page(){
  const [replaceKeyFiles,setReplaceKeyFiles]=useState<File[]>([]);const [replaceKeyText,setReplaceKeyText]=useState('');const [savedProgress,setSavedProgress]=useState<Record<string,number>>({});
  const [studyMode,setStudyMode]=useState<'full'|'batch'>('full');const [batchSize,setBatchSize]=useState(50);const [allowRepeat,setAllowRepeat]=useState(false);const [studiedCounts,setStudiedCounts]=useState<Record<string,number>>({});
  const [query,setQuery]=useState('');const [mixQuestions,setMixQuestions]=useState(false);const [mixAnswers,setMixAnswers]=useState(false);
+ const [historyDeck,setHistoryDeck]=useState<Deck|null>(null);const [historyRecords,setHistoryRecords]=useState<HistoryRecord[]>([]);const [reviewRecord,setReviewRecord]=useState<HistoryRecord|null>(null);const [historyFilter,setHistoryFilter]=useState<'all'|'wrong'|'right'>('all');const activeSessionId=useRef('');const startedAtRef=useRef(0);const restoringRef=useRef(false);
  const [items,setItems]=useState<QuizItem[]>([]);const [picked,setPicked]=useState<Record<string,Choice[]>>({});const [checked,setChecked]=useState<Record<string,boolean>>({});const [index,setIndex]=useState(0);const [wrongOnly,setWrongOnly]=useState(false);
  const load=async()=>{try{const d=await request('/api/quizzes');setDecks(d.decks);}catch(e){setError((e as Error).message);}};
  useEffect(()=>{void load();},[]);
- useEffect(()=>{if(!decks.length)return;const resume:Record<string,number>={};for(const d of decks){const saved=readProgress(d.id);if(saved)resume[d.id]=saved.questionIds.length;}setSavedProgress(resume);setStudiedCounts(Object.fromEntries(decks.map(d=>[d.id,new Set(readStudied(d.id).filter(id=>d.questions.some(q=>q.id===id))).size])));},[decks]);
+ useEffect(()=>{if(!decks.length)return;const resume:Record<string,number>={};for(const d of decks){const saved=readProgress(d.id);if(saved)resume[d.id]=saved.questionIds.length;}setSavedProgress(resume);
+  // Migrate the one active V11 progress snapshot into V12 history without changing legacy keys.
+  for(const d of decks){const old=readProgress(d.id);if(old){const id=old.sessionId||`legacy-${d.id}`;if(!readHistory(d.id).some(r=>r.id===id))saveHistory(d.id,{...old,id,startedAt:old.updatedAt,finished:false});}}
+  setStudiedCounts(Object.fromEntries(decks.map(d=>[d.id,new Set(readStudied(d.id).filter(id=>d.questions.some(q=>q.id===id))).size])));},[decks]);
  useEffect(()=>{
   if((screen!=='quiz'&&screen!=='result')||!deck||!items.length)return;
-  const progress:SavedProgress={deckId:deck.id,questionIds:items.map(it=>it.q.id),choiceOrders:Object.fromEntries(items.map(it=>[it.q.id,it.choices])) as Record<string,Choice[]>,picked,checked,index,wrongOnly,updatedAt:Date.now()};
-  try{localStorage.setItem(storageKey(deck.id),JSON.stringify(progress));setSavedProgress(x=>({...x,[deck.id]:items.length}));}catch{/* browser storage blocked */}
+  if(restoringRef.current){restoringRef.current=false;return;}
+  const id=activeSessionId.current||`legacy-${deck.id}`;
+  const progress:SavedProgress={deckId:deck.id,questionIds:items.map(it=>it.q.id),choiceOrders:Object.fromEntries(items.map(it=>[it.q.id,it.choices])) as Record<string,Choice[]>,picked,checked,index,wrongOnly,updatedAt:Date.now(),sessionId:id};
+  try{localStorage.setItem(storageKey(deck.id),JSON.stringify(progress));saveHistory(deck.id,{...progress,id,startedAt:startedAtRef.current||Date.now(),finished:screen==='result'});setSavedProgress(x=>({...x,[deck.id]:items.length}));}catch{/* browser storage blocked */}
  },[screen,deck,items,picked,checked,index,wrongOnly]);
 
  const close=()=>{setScreen('home');setError('');setNotice('');setDeck(null);void load();};
@@ -80,6 +103,7 @@ export default function Page(){
   if(!onlyWrong&&studyMode==='batch'&&!allowRepeat){
    try{const ids=[...new Set([...readStudied(d.id),...qs.map(q=>q.id)])];localStorage.setItem(studiedKey(d.id),JSON.stringify(ids));setStudiedCounts(x=>({...x,[d.id]:ids.length}));}catch{/* localStorage bị chặn */}
   }
+  activeSessionId.current=crypto.randomUUID();startedAtRef.current=Date.now();
   setItems(qs.map(q=>({q,choices:mixAnswers&&!q.imageUrl?shuffle(available(q)):available(q)})));
   setPicked({});setChecked({});setIndex(0);setDeck(d);setWrongOnly(onlyWrong);setScreen('quiz');
   setNotice(!onlyWrong&&studyMode==='batch'?`Lượt ôn mới: ${qs.length} câu · ${allowRepeat?'Cho phép trùng':'Không trùng với các lượt đã lấy'}.`:'');setError('');
@@ -98,12 +122,33 @@ export default function Page(){
   const lookup=new Map(d.questions.map(q=>[q.id,q]));
   const restored=saved.questionIds.map(id=>lookup.get(id)).filter((q):q is Question=>Boolean(q)).map(q=>({q,choices:(saved.choiceOrders[q.id]||available(q)).filter(c=>available(q).includes(c))}));
   if(!restored.length){start(d);return;}
+  activeSessionId.current=saved.sessionId||`legacy-${d.id}`;startedAtRef.current=readHistory(d.id).find(r=>r.id===activeSessionId.current)?.startedAt||saved.updatedAt;
   setDeck(d);setItems(restored);setPicked(saved.picked||{});setChecked(saved.checked||{});setIndex(Math.min(Math.max(0,saved.index||0),restored.length-1));setWrongOnly(Boolean(saved.wrongOnly));setScreen('quiz');setNotice('Đã khôi phục tiến trình trên trình duyệt này.');setError('');
  };
  const reset=()=>{
   if(!deck||!confirm('Xóa các lựa chọn trong lượt làm hiện tại và bắt đầu lại từ câu 1?'))return;
   try{localStorage.removeItem(storageKey(deck.id));}catch{}
-  setPicked({});setChecked({});setIndex(0);setWrongOnly(false);setScreen('quiz');setNotice('Đã đặt lại tiến trình làm bài.');
+  activeSessionId.current=crypto.randomUUID();startedAtRef.current=Date.now();
+  setPicked({});setChecked({});setIndex(0);setWrongOnly(false);setScreen('quiz');setNotice('Đã đặt lại tiến trình làm bài; lịch sử lượt cũ vẫn được giữ.');
+ };
+ const showHistory=(d:Deck)=>{setHistoryDeck(d);setHistoryRecords(readHistory(d.id));setHistoryFilter('all');setReviewRecord(null);setScreen('history');setError('');setNotice('');};
+ const reviewHistory=(record:HistoryRecord)=>{setReviewRecord(record);setScreen('history-review');};
+ const deleteHistory=(id:string)=>{if(!historyDeck||!confirm('Xóa riêng lượt ôn này khỏi lịch sử? Bài đang làm dở và bộ đề gốc không bị ảnh hưởng.'))return;try{const updated=readHistory(historyDeck.id).filter(r=>r.id!==id);localStorage.setItem(historyKey(historyDeck.id),JSON.stringify(updated));setHistoryRecords(updated);setNotice('Đã xóa bản ghi lịch sử đã chọn.');}catch{setError('Không xóa được lịch sử trong trình duyệt.');}};
+ const exportBackup=()=>{
+  try{const entries:Record<string,string>={};for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key&&BACKUP_PREFIXES.some(prefix=>key.startsWith(prefix)))entries[key]=localStorage.getItem(key)||'';}
+   downloadJson('quizstudy-backup-'+new Date().toISOString().slice(0,10)+'.json',{format:'quizstudy-local-backup',version:12,exportedAt:new Date().toISOString(),entries});setNotice('Đã xuất bản sao lưu. Hãy cất file JSON ở nơi an toàn.');
+  }catch{setError('Không đọc được dữ liệu lưu trên trình duyệt.');}
+ };
+ const importBackup=async(file:File)=>{
+  try{const data=JSON.parse(await file.text());if(data?.format!=='quizstudy-local-backup'||data.version!==12||!data.entries||typeof data.entries!=='object'||Array.isArray(data.entries))throw Error('Không phải file sao lưu QuizStudy V12 hợp lệ.');
+   const pairs=Object.entries(data.entries) as [string,unknown][];
+   if(pairs.length>1000||pairs.some(([k,v])=>!BACKUP_PREFIXES.some(p=>k.startsWith(p))||typeof v!=='string'||v.length>10_000_000))throw Error('File sao lưu chứa dữ liệu không hợp lệ.');
+   for(const [k,v] of pairs){if(k!=='quizstudy-theme')JSON.parse(v as string);else if(v!=='light'&&v!=='dark')throw Error('Giá trị giao diện trong sao lưu không hợp lệ.');}
+   if(!confirm(`Khôi phục ${pairs.length} mục lưu trữ? Các mục trùng khóa sẽ bị ghi đè. Hãy Xuất bản sao lưu hiện tại trước khi tiếp tục.`))return;
+   for(const [k,v] of pairs)localStorage.setItem(k,v as string);
+   setNotice('Đã khôi phục dữ liệu. Hãy tải lại trang để cập nhật danh sách tiến trình và lịch sử.');
+   await load();
+  }catch(e){setError((e as Error).message);}
  };
  const importImageDoc=async()=>{
   if(!imageDoc){setError('Hãy chọn file Word chứa ảnh.');return;}
@@ -206,14 +251,19 @@ export default function Page(){
   {screen==='home'&&<>
    <section className="hero"><h1>Ôn trắc nghiệm theo cách của bạn</h1><p>Upload đề + đáp án một lần. Cả nhóm có thể học, thêm, sửa và xóa từ mọi thiết bị.</p></section>
    <div className="row between" style={{marginBottom:18}}><h2 style={{margin:0}}>Thư viện đề thi ({decks.length})</h2><button className="button" onClick={()=>{setScreen('import');setError('');setNotice('');}}><FilePlus2 size={17}/>Thêm bộ đề</button></div>
+   <div className="row" style={{marginBottom:16,flexWrap:'wrap'}}><button className="button ghost small" onClick={exportBackup}><ShieldCheck size={15}/> Xuất sao lưu tiến trình</button><label className="button ghost small" style={{cursor:'pointer'}}><FileUp size={15}/> Khôi phục sao lưu <input type="file" accept=".json" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)void importBackup(f);e.currentTarget.value='';}}/></label></div>
    <div className="row" style={{marginBottom:16}}><div className="search"><Search size={17}/><input placeholder="Tìm môn học, tên bộ đề..." value={query} onChange={e=>setQuery(e.target.value)}/></div></div>
    <div className="panel study-settings"><h3 style={{marginTop:0}}>Cài đặt lượt ôn tập</h3>
     <div className="study-mode-row"><label className="toggle"><input type="radio" name="study-mode" checked={studyMode==='full'} onChange={()=>setStudyMode('full')}/>Làm toàn bộ đề (như cũ)</label><label className="toggle"><input type="radio" name="study-mode" checked={studyMode==='batch'} onChange={()=>setStudyMode('batch')}/>Luyện theo lượt</label></div>
     {studyMode==='batch'&&<div className="batch-controls"><label className="field" style={{margin:0}}><span className="field-title">Số câu mỗi lượt</span><select className="textinput" value={batchSize} onChange={e=>setBatchSize(Number(e.target.value))}>{[10,20,30,50,100,150].map(n=><option key={n} value={n}>{n} câu</option>)}</select></label><div className="batch-repeat"><span className="field-title">Cách chọn câu</span><label className="toggle"><input type="radio" name="batch-repeat" checked={!allowRepeat} onChange={()=>setAllowRepeat(false)}/>Không trùng – chỉ lấy câu chưa từng được đưa vào lượt trước</label><label className="toggle"><input type="radio" name="batch-repeat" checked={allowRepeat} onChange={()=>setAllowRepeat(true)}/>Cho phép trùng – chọn ngẫu nhiên để kiểm tra lại</label></div></div>}
     <div className="row" style={{gap:22,marginTop:18}}><label className="toggle"><input type="checkbox" checked={mixQuestions} onChange={e=>setMixQuestions(e.target.checked)}/>Trộn thứ tự câu hỏi (toàn bộ đề)</label><label className="toggle"><input type="checkbox" checked={mixAnswers} onChange={e=>setMixAnswers(e.target.checked)}/>Trộn A/B/C/D (chỉ đề chữ)</label></div>
     <p className="muted" style={{marginBottom:0}}>Không trùng: câu được đánh dấu đã lấy ngay khi tạo lượt, kể cả bạn chưa hoàn thành; lịch sử tách biệt cho từng bộ đề trên trình duyệt này. Cho phép trùng: các lượt có thể chứa câu đã học, nhưng không lặp câu trong cùng một lượt. Bộ đề gốc trên Supabase không bị thay đổi.</p></div>
-   <div className="decks">{visibleDecks.map(d=><article className="panel deck" key={d.id} style={{marginBottom:0}}><div><strong>{d.title}</strong><small>{d.subject||'Khác'} · {d.questions.length} câu · {d.questions.filter(x=>answerOf(x).length>0).length} đáp án · Đã lấy {Math.min(studiedCounts[d.id]||0,d.questions.length)}/{d.questions.length} câu không trùng</small></div><div className="topActions">{savedProgress[d.id]&&<button className="button ghost small" onClick={()=>resume(d)}>Tiếp tục ({savedProgress[d.id]} câu)</button>}<button className="button small" onClick={()=>startNew(d)}>{studyMode==='batch'?`Lượt mới (${Math.min(batchSize,allowRepeat?d.questions.length:Math.max(0,d.questions.length-(studiedCounts[d.id]||0)))} câu)`:'Làm toàn bộ đề'}</button>{(studiedCounts[d.id]||0)>0&&<button className="button ghost small" onClick={()=>clearStudied(d)} title="Chỉ xóa lịch sử lượt Không trùng của bộ đề này">Xóa lịch sử lượt</button>}<button className="button ghost small" onClick={()=>exportJson(d)} title="Tải về JSON để sao lưu"><Download size={15}/> JSON</button><button className="button ghost small" onClick={()=>edit(d)} title="Sửa đề"><Pencil size={15}/> Sửa</button><button className="button danger small" disabled={loading} onClick={()=>remove(d)} title="Xóa đề"><Trash2 size={15}/></button></div></article>)}{visibleDecks.length===0&&<div className="panel muted">{decks.length?'Không tìm thấy bộ đề phù hợp.':'Chưa có bộ đề. Hãy nhấn “Thêm bộ đề” để bắt đầu.'}</div>}</div>
+   <div className="decks">{visibleDecks.map(d=><article className="panel deck" key={d.id} style={{marginBottom:0}}><div><strong>{d.title}</strong><small>{d.subject||'Khác'} · {d.questions.length} câu · {d.questions.filter(x=>answerOf(x).length>0).length} đáp án · Đã lấy {Math.min(studiedCounts[d.id]||0,d.questions.length)}/{d.questions.length} câu không trùng</small></div><div className="topActions"><button className="button ghost small" onClick={()=>showHistory(d)}><History size={15}/> Lịch sử ({readHistory(d.id).length})</button>{savedProgress[d.id]&&<button className="button ghost small" onClick={()=>resume(d)}>Tiếp tục ({savedProgress[d.id]} câu)</button>}<button className="button small" onClick={()=>startNew(d)}>{studyMode==='batch'?`Lượt mới (${Math.min(batchSize,allowRepeat?d.questions.length:Math.max(0,d.questions.length-(studiedCounts[d.id]||0)))} câu)`:'Làm toàn bộ đề'}</button>{(studiedCounts[d.id]||0)>0&&<button className="button ghost small" onClick={()=>clearStudied(d)} title="Chỉ xóa lịch sử lượt Không trùng của bộ đề này">Xóa lịch sử lượt</button>}<button className="button ghost small" onClick={()=>exportJson(d)} title="Tải về JSON để sao lưu"><Download size={15}/> JSON</button><button className="button ghost small" onClick={()=>edit(d)} title="Sửa đề"><Pencil size={15}/> Sửa</button><button className="button danger small" disabled={loading} onClick={()=>remove(d)} title="Xóa đề"><Trash2 size={15}/></button></div></article>)}{visibleDecks.length===0&&<div className="panel muted">{decks.length?'Không tìm thấy bộ đề phù hợp.':'Chưa có bộ đề. Hãy nhấn “Thêm bộ đề” để bắt đầu.'}</div>}</div>
   </>}
+  {screen==='history'&&historyDeck&&<div className="quizWrap"><button className="button ghost small" onClick={close}><ArrowLeft size={15}/>Thư viện</button><div className="panel" style={{marginTop:18}}><h2>Lịch sử ôn tập – {historyDeck.title}</h2><p className="muted">Lịch sử lưu riêng trên trình duyệt này. Tiến trình V11 đang dở được bảo toàn. Các lượt cũ hơn không thể khôi phục đáp án nếu trước đây chỉ lưu danh sách câu đã lấy.</p><p>Đã lấy ở chế độ Không trùng: <strong>{readStudied(historyDeck.id).length}/{historyDeck.questions.length}</strong> câu (không đồng nghĩa đã trả lời).</p><div className="row" style={{marginBottom:12}}><button className="button ghost small" onClick={exportBackup}><Download size={15}/> Sao lưu</button></div>
+  {historyRecords.length===0?<p className="muted">Chưa có lượt nào được lưu chi tiết trên trình duyệt này.</p>:historyRecords.map((r,i)=>{const qs=r.questionIds.map(id=>historyDeck.questions.find(q=>q.id===id)).filter((q):q is Question=>Boolean(q));const attempted=qs.filter(q=>(r.picked[q.id]||[]).length).length;const right=qs.filter(q=>r.checked[q.id]&&answerOf(q).length&&equalsAnswer(r.picked[q.id]||[],answerOf(q))).length;return <div className="history-entry" key={r.id}><div><strong>Lượt {historyRecords.length-i} · {qs.length} câu</strong><div className="muted">{new Date(r.startedAt).toLocaleString('vi-VN')} · {r.finished?'Đã xem kết quả':'Đang học / chưa nộp'} · Đã chọn {attempted}/{qs.length} · Đúng {right}</div></div><div className="row"><button className="button small" onClick={()=>reviewHistory(r)}>Xem lại câu đã làm</button><button className="button danger small" onClick={()=>deleteHistory(r.id)}>Xóa</button></div></div>;})}</div></div>}
+  {screen==='history-review'&&historyDeck&&reviewRecord&&<div className="quizWrap"><button className="button ghost small" onClick={()=>setScreen('history')}><ArrowLeft size={15}/>Lịch sử</button><div className="panel" style={{marginTop:18}}><h2>Xem lại lượt ôn – {historyDeck.title}</h2><div className="row" style={{marginBottom:16}}><label className="toggle"><input type="radio" checked={historyFilter==='all'} onChange={()=>setHistoryFilter('all')}/>Tất cả</label><label className="toggle"><input type="radio" checked={historyFilter==='wrong'} onChange={()=>setHistoryFilter('wrong')}/>Sai / chưa chọn</label><label className="toggle"><input type="radio" checked={historyFilter==='right'} onChange={()=>setHistoryFilter('right')}/>Đúng</label></div>
+  {reviewRecord.questionIds.map(id=>{const q=historyDeck.questions.find(v=>v.id===id);if(!q)return null;const user=reviewRecord.picked[id]||[];const key=answerOf(q);const checkedAnswer=Boolean(reviewRecord.checked[id]);const right=checkedAnswer&&key.length>0&&equalsAnswer(user,key);if(historyFilter==='right'&&!right)return null;if(historyFilter==='wrong'&&right)return null;const order=(reviewRecord.choiceOrders[id]||available(q)).filter(c=>available(q).includes(c));return <div key={id} className="review"><strong>Câu {q.number}. {q.text}</strong>{q.imageUrl&&<ZoomableImage src={q.imageUrl} alt={`Ảnh câu ${q.number}`}/>}<p className="muted">Đã chọn: <b>{user.length?user.join(', '):'Chưa chọn'}</b> · Đáp án: <b>{key.length?key.join(', '):'Chưa có'}</b> · {checkedAnswer?(right?'Đúng':'Sai'):'Chưa kiểm tra'}</p>{order.map(c=><div key={c} className={'review-option '+(key.includes(c)?'success ':user.includes(c)?'bad':'')}>{order.indexOf(c)>=0?C[order.indexOf(c)]:c}. {q.imageUrl?`Đáp án ${c} (xem ảnh phía trên)`:q.options[c]}{key.includes(c)?' ✓':''}</div>)}</div>;})}</div></div>}
   {screen==='import'&&<div className="quizWrap"><button className="button ghost small" onClick={close}><ArrowLeft size={15}/>Thư viện</button><div className="panel" style={{marginTop:18}}><h2>Thêm đề mới</h2><div className="answer-import"><strong>Nhập 1 file JSON QuizStudy (khuyên dùng)</strong><p className="muted">File đã gồm câu hỏi + lựa chọn + đáp án đơn/nhiều. Chọn một file, kiểm tra trước khi đăng. Không cần AI/API, không cần file đáp án riêng.</p><input type="file" accept=".json,application/json" disabled={loading} onChange={e=>{const f=e.target.files?.[0];if(f)void importJson(f);e.currentTarget.value="";}}/></div><hr className="divider"/><div className="answer-import"><strong>Nhập Word dạng ảnh (không OCR, không AI)</strong>
    <p className="muted">Word theo mẫu: ghi Câu 1, chèn 1 ảnh chứa câu hỏi và A/B/C/D, rồi Câu 2, chèn ảnh tiếp theo. Có thể kèm file đáp án hoặc nhập sau.</p>
    <label className="field"><span className="field-title">File Word chứa ảnh câu hỏi (.docx, tối đa 60 MB)</span><input type="file" accept=".docx" onChange={e=>setImageDoc(e.target.files?.[0]||null)}/></label>

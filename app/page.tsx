@@ -11,15 +11,16 @@ type QuizItem={q:Question;choices:Choice[]};
 type SavedProgress={deckId:string;questionIds:string[];choiceOrders:Record<string,Choice[]>;picked:Record<string,Choice[]>;checked:Record<string,boolean>;index:number;wrongOnly:boolean;updatedAt:number;sessionId?:string};
 type HistoryRecord=SavedProgress & {id:string;startedAt:number;finished:boolean};
 const historyKey=(id:string)=>`quizstudy-history-v12:${id}`;
-const BACKUP_PREFIXES=['quizstudy-history-v12:','quizstudy-progress-v5:','quizstudy-studied-v9:','quizstudy-theme'];
+const rangeProgressKey=(id:string)=>`quizstudy-range-progress-v13:${id}`;
+const BACKUP_PREFIXES=['quizstudy-history-v12:','quizstudy-progress-v5:','quizstudy-range-progress-v13:','quizstudy-studied-v9:','quizstudy-theme'];
 const storageKey=(id:string)=>`quizstudy-progress-v5:${id}`;
 const studiedKey=(id:string)=>`quizstudy-studied-v9:${id}`;
 function readStudied(id:string):string[]{
  try{const value=JSON.parse(localStorage.getItem(studiedKey(id))||'[]');return Array.isArray(value)?value.filter((x):x is string=>typeof x==='string'):[];}catch{return [];}
 }
 
-function readProgress(id:string):SavedProgress|null{
- try {const raw=localStorage.getItem(storageKey(id));if(!raw)return null;const data=JSON.parse(raw) as SavedProgress;
+function readProgress(id:string,key=storageKey(id)):SavedProgress|null{
+ try {const raw=localStorage.getItem(key);if(!raw)return null;const data=JSON.parse(raw) as SavedProgress;
   return data.deckId===id&&Array.isArray(data.questionIds)&&data.questionIds.length>0?data:null;
  }catch{return null;}
 }
@@ -68,13 +69,13 @@ export default function Page(){
  const [examFiles,setExamFiles]=useState<File[]>([]);const [keyFiles,setKeyFiles]=useState<File[]>([]);
  const [examText,setExamText]=useState('');const [keyText,setKeyText]=useState('');
  const [replaceKeyFiles,setReplaceKeyFiles]=useState<File[]>([]);const [replaceKeyText,setReplaceKeyText]=useState('');const [savedProgress,setSavedProgress]=useState<Record<string,number>>({});
- const [studyMode,setStudyMode]=useState<'full'|'batch'>('full');const [batchSize,setBatchSize]=useState(50);const [allowRepeat,setAllowRepeat]=useState(false);const [studiedCounts,setStudiedCounts]=useState<Record<string,number>>({});
+ const [studyMode,setStudyMode]=useState<'full'|'batch'>('full');const [rangeFrom,setRangeFrom]=useState('250');const [rangeTo,setRangeTo]=useState('300');const [rangeProgressCounts,setRangeProgressCounts]=useState<Record<string,number>>({});const [batchSize,setBatchSize]=useState(50);const [allowRepeat,setAllowRepeat]=useState(false);const [studiedCounts,setStudiedCounts]=useState<Record<string,number>>({});
  const [query,setQuery]=useState('');const [mixQuestions,setMixQuestions]=useState(false);const [mixAnswers,setMixAnswers]=useState(false);
- const [historyDeck,setHistoryDeck]=useState<Deck|null>(null);const [historyRecords,setHistoryRecords]=useState<HistoryRecord[]>([]);const [reviewRecord,setReviewRecord]=useState<HistoryRecord|null>(null);const [historyFilter,setHistoryFilter]=useState<'all'|'wrong'|'right'>('all');const activeSessionId=useRef('');const startedAtRef=useRef(0);const restoringRef=useRef(false);
+ const activeProgressKind=useRef<'normal'|'range'>('normal');const [historyDeck,setHistoryDeck]=useState<Deck|null>(null);const [historyRecords,setHistoryRecords]=useState<HistoryRecord[]>([]);const [reviewRecord,setReviewRecord]=useState<HistoryRecord|null>(null);const [historyFilter,setHistoryFilter]=useState<'all'|'wrong'|'right'>('all');const activeSessionId=useRef('');const startedAtRef=useRef(0);const restoringRef=useRef(false);
  const [items,setItems]=useState<QuizItem[]>([]);const [picked,setPicked]=useState<Record<string,Choice[]>>({});const [checked,setChecked]=useState<Record<string,boolean>>({});const [index,setIndex]=useState(0);const [wrongOnly,setWrongOnly]=useState(false);
  const load=async()=>{try{const d=await request('/api/quizzes');setDecks(d.decks);}catch(e){setError((e as Error).message);}};
  useEffect(()=>{void load();},[]);
- useEffect(()=>{if(!decks.length)return;const resume:Record<string,number>={};for(const d of decks){const saved=readProgress(d.id);if(saved)resume[d.id]=saved.questionIds.length;}setSavedProgress(resume);
+ useEffect(()=>{if(!decks.length)return;const resume:Record<string,number>={};for(const d of decks){const saved=readProgress(d.id);if(saved)resume[d.id]=saved.questionIds.length;}setSavedProgress(resume);setRangeProgressCounts(Object.fromEntries(decks.map(d=>[d.id,readProgress(d.id,rangeProgressKey(d.id))?.questionIds.length||0])));
   // Migrate the one active V11 progress snapshot into V12 history without changing legacy keys.
   for(const d of decks){const old=readProgress(d.id);if(old){const id=old.sessionId||`legacy-${d.id}`;if(!readHistory(d.id).some(r=>r.id===id))saveHistory(d.id,{...old,id,startedAt:old.updatedAt,finished:false});}}
   setStudiedCounts(Object.fromEntries(decks.map(d=>[d.id,new Set(readStudied(d.id).filter(id=>d.questions.some(q=>q.id===id))).size])));},[decks]);
@@ -83,7 +84,7 @@ export default function Page(){
   if(restoringRef.current){restoringRef.current=false;return;}
   const id=activeSessionId.current||`legacy-${deck.id}`;
   const progress:SavedProgress={deckId:deck.id,questionIds:items.map(it=>it.q.id),choiceOrders:Object.fromEntries(items.map(it=>[it.q.id,it.choices])) as Record<string,Choice[]>,picked,checked,index,wrongOnly,updatedAt:Date.now(),sessionId:id};
-  try{localStorage.setItem(storageKey(deck.id),JSON.stringify(progress));saveHistory(deck.id,{...progress,id,startedAt:startedAtRef.current||Date.now(),finished:screen==='result'});setSavedProgress(x=>({...x,[deck.id]:items.length}));}catch{/* browser storage blocked */}
+  try{const isRange=activeProgressKind.current==='range';localStorage.setItem(isRange?rangeProgressKey(deck.id):storageKey(deck.id),JSON.stringify(progress));saveHistory(deck.id,{...progress,id,startedAt:startedAtRef.current||Date.now(),finished:screen==='result'});if(isRange)setRangeProgressCounts(x=>({...x,[deck.id]:items.length}));else setSavedProgress(x=>({...x,[deck.id]:items.length}));}catch{/* browser storage blocked */}
  },[screen,deck,items,picked,checked,index,wrongOnly]);
 
  const close=()=>{setScreen('home');setError('');setNotice('');setDeck(null);void load();};
@@ -103,10 +104,23 @@ export default function Page(){
   if(!onlyWrong&&studyMode==='batch'&&!allowRepeat){
    try{const ids=[...new Set([...readStudied(d.id),...qs.map(q=>q.id)])];localStorage.setItem(studiedKey(d.id),JSON.stringify(ids));setStudiedCounts(x=>({...x,[d.id]:ids.length}));}catch{/* localStorage bị chặn */}
   }
-  activeSessionId.current=crypto.randomUUID();startedAtRef.current=Date.now();
+  activeProgressKind.current='normal';activeSessionId.current=crypto.randomUUID();startedAtRef.current=Date.now();
   setItems(qs.map(q=>({q,choices:mixAnswers&&!q.imageUrl?shuffle(available(q)):available(q)})));
   setPicked({});setChecked({});setIndex(0);setDeck(d);setWrongOnly(onlyWrong);setScreen('quiz');
   setNotice(!onlyWrong&&studyMode==='batch'?`Lượt ôn mới: ${qs.length} câu · ${allowRepeat?'Cho phép trùng':'Không trùng với các lượt đã lấy'}.`:'');setError('');
+ };
+ const startRange=(d:Deck)=>{
+  const from=Number(rangeFrom),to=Number(rangeTo);
+  if(!Number.isSafeInteger(from)||!Number.isSafeInteger(to)||from<1||to<from){setError('Hãy nhập khoảng câu hợp lệ, ví dụ từ 250 đến 300.');return;}
+  const qs=d.questions.filter(q=>q.number>=from&&q.number<=to).sort((a,b)=>a.number-b.number);
+  if(!qs.length){setError(`Bộ đề “${d.title}” không có câu nào đánh số từ ${from} đến ${to}.`);return;}
+  const previous=readProgress(d.id,rangeProgressKey(d.id));
+  if(previous&&!confirm('Bắt đầu ôn khoảng mới sẽ thay thế tiến trình ôn khoảng trước của bộ đề này. Bài đang làm dở ở chế độ thường vẫn được giữ. Tiếp tục?'))return;
+  // Deliberately do not write to quizstudy-studied-v9 or the regular quizstudy-progress-v5.
+  activeProgressKind.current='range';activeSessionId.current=crypto.randomUUID();startedAtRef.current=Date.now();
+  setItems(qs.map(q=>({q,choices:mixAnswers&&!q.imageUrl?shuffle(available(q)):available(q)})));
+  setPicked({});setChecked({});setIndex(0);setDeck(d);setWrongOnly(false);setScreen('quiz');
+  setNotice(`Ôn câu ${from}–${to}: có ${qs.length} câu trong bộ đề. Không thay đổi lịch sử Không trùng hoặc lượt đang làm dở thông thường.`);setError('');
  };
  const startNew=(d:Deck)=>{
   if(readProgress(d.id)&&!confirm('Bắt đầu lượt mới sẽ thay thế tiến trình đang lưu của bộ đề này. Tiếp tục?'))return;
@@ -117,30 +131,30 @@ export default function Page(){
   try{localStorage.removeItem(studiedKey(d.id));}catch{}
   setStudiedCounts(x=>({...x,[d.id]:0}));setNotice(`Đã xóa lịch sử lượt của ${d.title}.`);
  };
- const resume=(d:Deck)=>{
-  const saved=readProgress(d.id);if(!saved){start(d);return;}
+ const resume=(d:Deck,kind:'normal'|'range'='normal')=>{
+  const saved=readProgress(d.id,kind==='range'?rangeProgressKey(d.id):storageKey(d.id));if(!saved){setNotice('Không tìm thấy tiến trình đã lưu cho lượt này.');return;}
   const lookup=new Map(d.questions.map(q=>[q.id,q]));
   const restored=saved.questionIds.map(id=>lookup.get(id)).filter((q):q is Question=>Boolean(q)).map(q=>({q,choices:(saved.choiceOrders[q.id]||available(q)).filter(c=>available(q).includes(c))}));
   if(!restored.length){start(d);return;}
-  activeSessionId.current=saved.sessionId||`legacy-${d.id}`;startedAtRef.current=readHistory(d.id).find(r=>r.id===activeSessionId.current)?.startedAt||saved.updatedAt;
+  activeProgressKind.current=kind;activeSessionId.current=saved.sessionId||`legacy-${d.id}`;startedAtRef.current=readHistory(d.id).find(r=>r.id===activeSessionId.current)?.startedAt||saved.updatedAt;
   setDeck(d);setItems(restored);setPicked(saved.picked||{});setChecked(saved.checked||{});setIndex(Math.min(Math.max(0,saved.index||0),restored.length-1));setWrongOnly(Boolean(saved.wrongOnly));setScreen('quiz');setNotice('Đã khôi phục tiến trình trên trình duyệt này.');setError('');
  };
  const reset=()=>{
   if(!deck||!confirm('Xóa các lựa chọn trong lượt làm hiện tại và bắt đầu lại từ câu 1?'))return;
-  try{localStorage.removeItem(storageKey(deck.id));}catch{}
+  try{localStorage.removeItem(activeProgressKind.current==='range'?rangeProgressKey(deck.id):storageKey(deck.id));}catch{}
   activeSessionId.current=crypto.randomUUID();startedAtRef.current=Date.now();
-  setPicked({});setChecked({});setIndex(0);setWrongOnly(false);setScreen('quiz');setNotice('Đã đặt lại tiến trình làm bài; lịch sử lượt cũ vẫn được giữ.');
+  setPicked({});setChecked({});setIndex(0);setWrongOnly(false);setScreen('quiz');setNotice('Đã đặt lại tiến trình của lượt hiện tại; lịch sử lượt cũ và tiến trình của chế độ khác vẫn được giữ.');
  };
  const showHistory=(d:Deck)=>{setHistoryDeck(d);setHistoryRecords(readHistory(d.id));setHistoryFilter('all');setReviewRecord(null);setScreen('history');setError('');setNotice('');};
  const reviewHistory=(record:HistoryRecord)=>{setReviewRecord(record);setScreen('history-review');};
  const deleteHistory=(id:string)=>{if(!historyDeck||!confirm('Xóa riêng lượt ôn này khỏi lịch sử? Bài đang làm dở và bộ đề gốc không bị ảnh hưởng.'))return;try{const updated=readHistory(historyDeck.id).filter(r=>r.id!==id);localStorage.setItem(historyKey(historyDeck.id),JSON.stringify(updated));setHistoryRecords(updated);setNotice('Đã xóa bản ghi lịch sử đã chọn.');}catch{setError('Không xóa được lịch sử trong trình duyệt.');}};
  const exportBackup=()=>{
   try{const entries:Record<string,string>={};for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key&&BACKUP_PREFIXES.some(prefix=>key.startsWith(prefix)))entries[key]=localStorage.getItem(key)||'';}
-   downloadJson('quizstudy-backup-'+new Date().toISOString().slice(0,10)+'.json',{format:'quizstudy-local-backup',version:12,exportedAt:new Date().toISOString(),entries});setNotice('Đã xuất bản sao lưu. Hãy cất file JSON ở nơi an toàn.');
+   downloadJson('quizstudy-backup-'+new Date().toISOString().slice(0,10)+'.json',{format:'quizstudy-local-backup',version:13,exportedAt:new Date().toISOString(),entries});setNotice('Đã xuất bản sao lưu. Hãy cất file JSON ở nơi an toàn.');
   }catch{setError('Không đọc được dữ liệu lưu trên trình duyệt.');}
  };
  const importBackup=async(file:File)=>{
-  try{const data=JSON.parse(await file.text());if(data?.format!=='quizstudy-local-backup'||data.version!==12||!data.entries||typeof data.entries!=='object'||Array.isArray(data.entries))throw Error('Không phải file sao lưu QuizStudy V12 hợp lệ.');
+  try{const data=JSON.parse(await file.text());if(data?.format!=='quizstudy-local-backup'||![12,13].includes(data.version)||!data.entries||typeof data.entries!=='object'||Array.isArray(data.entries))throw Error('Không phải file sao lưu QuizStudy V12/V13 hợp lệ.');
    const pairs=Object.entries(data.entries) as [string,unknown][];
    if(pairs.length>1000||pairs.some(([k,v])=>!BACKUP_PREFIXES.some(p=>k.startsWith(p))||typeof v!=='string'||v.length>10_000_000))throw Error('File sao lưu chứa dữ liệu không hợp lệ.');
    for(const [k,v] of pairs){if(k!=='quizstudy-theme')JSON.parse(v as string);else if(v!=='light'&&v!=='dark')throw Error('Giá trị giao diện trong sao lưu không hợp lệ.');}
@@ -257,8 +271,16 @@ export default function Page(){
     <div className="study-mode-row"><label className="toggle"><input type="radio" name="study-mode" checked={studyMode==='full'} onChange={()=>setStudyMode('full')}/>Làm toàn bộ đề (như cũ)</label><label className="toggle"><input type="radio" name="study-mode" checked={studyMode==='batch'} onChange={()=>setStudyMode('batch')}/>Luyện theo lượt</label></div>
     {studyMode==='batch'&&<div className="batch-controls"><label className="field" style={{margin:0}}><span className="field-title">Số câu mỗi lượt</span><select className="textinput" value={batchSize} onChange={e=>setBatchSize(Number(e.target.value))}>{[10,20,30,50,100,150].map(n=><option key={n} value={n}>{n} câu</option>)}</select></label><div className="batch-repeat"><span className="field-title">Cách chọn câu</span><label className="toggle"><input type="radio" name="batch-repeat" checked={!allowRepeat} onChange={()=>setAllowRepeat(false)}/>Không trùng – chỉ lấy câu chưa từng được đưa vào lượt trước</label><label className="toggle"><input type="radio" name="batch-repeat" checked={allowRepeat} onChange={()=>setAllowRepeat(true)}/>Cho phép trùng – chọn ngẫu nhiên để kiểm tra lại</label></div></div>}
     <div className="row" style={{gap:22,marginTop:18}}><label className="toggle"><input type="checkbox" checked={mixQuestions} onChange={e=>setMixQuestions(e.target.checked)}/>Trộn thứ tự câu hỏi (toàn bộ đề)</label><label className="toggle"><input type="checkbox" checked={mixAnswers} onChange={e=>setMixAnswers(e.target.checked)}/>Trộn A/B/C/D (chỉ đề chữ)</label></div>
+    <div className="range-panel" style={{marginTop:20,padding:16,border:'1px solid var(--border, #8884)',borderRadius:12}}>
+     <h3 style={{margin:'0 0 8px'}}>Ôn lại theo khoảng câu (V13)</h3>
+     <div className="row" style={{alignItems:'end',gap:12,flexWrap:'wrap'}}>
+      <label className="field" style={{margin:0}}><span className="field-title">Từ câu số</span><input className="textinput" type="number" min={1} step={1} value={rangeFrom} onChange={e=>setRangeFrom(e.target.value)}/></label>
+      <label className="field" style={{margin:0}}><span className="field-title">Đến câu số (bao gồm)</span><input className="textinput" type="number" min={1} step={1} value={rangeTo} onChange={e=>setRangeTo(e.target.value)}/></label>
+     </div>
+     <p className="muted" style={{margin:'9px 0 0'}}>Nhập ví dụ 250–300, sau đó bấm “Ôn khoảng câu” tại bộ đề muốn học. Chỉ lấy theo số câu gốc; <strong>không</strong> thay đổi bộ đếm Không trùng, tiến trình đang làm dở hoặc dữ liệu Supabase.</p>
+    </div>
     <p className="muted" style={{marginBottom:0}}>Không trùng: câu được đánh dấu đã lấy ngay khi tạo lượt, kể cả bạn chưa hoàn thành; lịch sử tách biệt cho từng bộ đề trên trình duyệt này. Cho phép trùng: các lượt có thể chứa câu đã học, nhưng không lặp câu trong cùng một lượt. Bộ đề gốc trên Supabase không bị thay đổi.</p></div>
-   <div className="decks">{visibleDecks.map(d=><article className="panel deck" key={d.id} style={{marginBottom:0}}><div><strong>{d.title}</strong><small>{d.subject||'Khác'} · {d.questions.length} câu · {d.questions.filter(x=>answerOf(x).length>0).length} đáp án · Đã lấy {Math.min(studiedCounts[d.id]||0,d.questions.length)}/{d.questions.length} câu không trùng</small></div><div className="topActions"><button className="button ghost small" onClick={()=>showHistory(d)}><History size={15}/> Lịch sử ({readHistory(d.id).length})</button>{savedProgress[d.id]&&<button className="button ghost small" onClick={()=>resume(d)}>Tiếp tục ({savedProgress[d.id]} câu)</button>}<button className="button small" onClick={()=>startNew(d)}>{studyMode==='batch'?`Lượt mới (${Math.min(batchSize,allowRepeat?d.questions.length:Math.max(0,d.questions.length-(studiedCounts[d.id]||0)))} câu)`:'Làm toàn bộ đề'}</button>{(studiedCounts[d.id]||0)>0&&<button className="button ghost small" onClick={()=>clearStudied(d)} title="Chỉ xóa lịch sử lượt Không trùng của bộ đề này">Xóa lịch sử lượt</button>}<button className="button ghost small" onClick={()=>exportJson(d)} title="Tải về JSON để sao lưu"><Download size={15}/> JSON</button><button className="button ghost small" onClick={()=>edit(d)} title="Sửa đề"><Pencil size={15}/> Sửa</button><button className="button danger small" disabled={loading} onClick={()=>remove(d)} title="Xóa đề"><Trash2 size={15}/></button></div></article>)}{visibleDecks.length===0&&<div className="panel muted">{decks.length?'Không tìm thấy bộ đề phù hợp.':'Chưa có bộ đề. Hãy nhấn “Thêm bộ đề” để bắt đầu.'}</div>}</div>
+   <div className="decks">{visibleDecks.map(d=><article className="panel deck" key={d.id} style={{marginBottom:0}}><div><strong>{d.title}</strong><small>{d.subject||'Khác'} · {d.questions.length} câu · {d.questions.filter(x=>answerOf(x).length>0).length} đáp án · Đã lấy {Math.min(studiedCounts[d.id]||0,d.questions.length)}/{d.questions.length} câu không trùng</small></div><div className="topActions"><button className="button ghost small" onClick={()=>showHistory(d)}><History size={15}/> Lịch sử ({readHistory(d.id).length})</button>{savedProgress[d.id]&&<button className="button ghost small" onClick={()=>resume(d)}>Tiếp tục ({savedProgress[d.id]} câu)</button>}{Boolean(rangeProgressCounts[d.id])&&<button className="button ghost small" onClick={()=>resume(d,'range')}>Tiếp tục ôn khoảng ({rangeProgressCounts[d.id]} câu)</button>}<button className="button ghost small" onClick={()=>startRange(d)}>Ôn khoảng câu {rangeFrom||'?'}–{rangeTo||'?'}</button><button className="button small" onClick={()=>startNew(d)}>{studyMode==='batch'?`Lượt mới (${Math.min(batchSize,allowRepeat?d.questions.length:Math.max(0,d.questions.length-(studiedCounts[d.id]||0)))} câu)`:'Làm toàn bộ đề'}</button>{(studiedCounts[d.id]||0)>0&&<button className="button ghost small" onClick={()=>clearStudied(d)} title="Chỉ xóa lịch sử lượt Không trùng của bộ đề này">Xóa lịch sử lượt</button>}<button className="button ghost small" onClick={()=>exportJson(d)} title="Tải về JSON để sao lưu"><Download size={15}/> JSON</button><button className="button ghost small" onClick={()=>edit(d)} title="Sửa đề"><Pencil size={15}/> Sửa</button><button className="button danger small" disabled={loading} onClick={()=>remove(d)} title="Xóa đề"><Trash2 size={15}/></button></div></article>)}{visibleDecks.length===0&&<div className="panel muted">{decks.length?'Không tìm thấy bộ đề phù hợp.':'Chưa có bộ đề. Hãy nhấn “Thêm bộ đề” để bắt đầu.'}</div>}</div>
   </>}
   {screen==='history'&&historyDeck&&<div className="quizWrap"><button className="button ghost small" onClick={close}><ArrowLeft size={15}/>Thư viện</button><div className="panel" style={{marginTop:18}}><h2>Lịch sử ôn tập – {historyDeck.title}</h2><p className="muted">Lịch sử lưu riêng trên trình duyệt này. Tiến trình V11 đang dở được bảo toàn. Các lượt cũ hơn không thể khôi phục đáp án nếu trước đây chỉ lưu danh sách câu đã lấy.</p><p>Đã lấy ở chế độ Không trùng: <strong>{readStudied(historyDeck.id).length}/{historyDeck.questions.length}</strong> câu (không đồng nghĩa đã trả lời).</p><div className="row" style={{marginBottom:12}}><button className="button ghost small" onClick={exportBackup}><Download size={15}/> Sao lưu</button></div>
   {historyRecords.length===0?<p className="muted">Chưa có lượt nào được lưu chi tiết trên trình duyệt này.</p>:historyRecords.map((r,i)=>{const qs=r.questionIds.map(id=>historyDeck.questions.find(q=>q.id===id)).filter((q):q is Question=>Boolean(q));const attempted=qs.filter(q=>(r.picked[q.id]||[]).length).length;const right=qs.filter(q=>r.checked[q.id]&&answerOf(q).length&&equalsAnswer(r.picked[q.id]||[],answerOf(q))).length;return <div className="history-entry" key={r.id}><div><strong>Lượt {historyRecords.length-i} · {qs.length} câu</strong><div className="muted">{new Date(r.startedAt).toLocaleString('vi-VN')} · {r.finished?'Đã xem kết quả':'Đang học / chưa nộp'} · Đã chọn {attempted}/{qs.length} · Đúng {right}</div></div><div className="row"><button className="button small" onClick={()=>reviewHistory(r)}>Xem lại câu đã làm</button><button className="button danger small" onClick={()=>deleteHistory(r.id)}>Xóa</button></div></div>;})}</div></div>}

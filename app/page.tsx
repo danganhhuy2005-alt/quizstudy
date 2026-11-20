@@ -237,7 +237,7 @@ export default function Page(){
     const answer=[...new Set(a.map(x=>String(x).toUpperCase()))].filter((x):x is Choice=>C.includes(x as Choice));
     const invalid=answer.filter(x=>!options[x]?.trim());
     if(invalid.length)throw Error(`Câu ${i+1}: đáp án ${invalid.join(', ')} không có lựa chọn tương ứng.`);
-    return {id:typeof q.id==='string'&&q.id.length<100?q.id:`json-${i+1}-${crypto.randomUUID()}`,number:Number(q.number)||i+1,text:q.text,options,answer,multiple:Boolean(q.multiple)||answer.length>1,imageUrl:typeof q.imageUrl==='string'?q.imageUrl:undefined,...(Number.isInteger(q.requiredAnswers)&&Number(q.requiredAnswers)>=1&&Number(q.requiredAnswers)<=8?{requiredAnswers:q.requiredAnswers}:{})};
+    return {id:typeof q.id==='string'&&q.id.length<100?q.id:`json-${i+1}-${crypto.randomUUID()}`,number:Number(q.number)||i+1,text:q.text,options,answer,multiple:Boolean(q.multiple)||answer.length>1,imageUrl:typeof q.imageUrl==='string'?q.imageUrl:undefined,...(typeof q.requiredAnswers==='number'&&Number.isInteger(q.requiredAnswers)&&q.requiredAnswers>=1&&q.requiredAnswers<=8?{requiredAnswers:q.requiredAnswers}:{})};
    });
    const numbers=new Set<number>();
    for(const q of parsed){if(numbers.has(q.number))throw Error(`Số câu ${q.number} bị trùng trong JSON.`);numbers.add(q.number);}

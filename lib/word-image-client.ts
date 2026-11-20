@@ -22,16 +22,23 @@ export async function readImageWord(file:File):Promise<WordImageItem[]>{
    links.set(id,path);
   }
  }
- const entries:{number:number;rid:string}[]=[];let current:number|null=null;
+ const entries:{number:number;rid:string}[]=[];const labels:number[]=[];let current:number|null=null;
  for(const para of paragraphs(xml)){
   const text=content(para).trim();
-  const heading=text.match(/^(?:Câu|Question|Q)\s*(\d{1,4})(?:\s*[.):\-]|\s*$)/i);
-  if(heading)current=Number(heading[1]);
+  const heading=text.match(/^(?:Câu|Question|Q)\s*(\d{1,4})(?=\s|[.):\-]|$)/i);
+  if(heading){current=Number(heading[1]);labels.push(current);}
   for(const img of para.match(/<a:blip\b[^>]*\/?>/g)||[]){
    const rid=getAttr(img,'r:embed');if(rid&&current!==null){entries.push({number:current,rid});current=null;}
   }
  }
  if(!entries.length)throw Error('Không tìm thấy nhãn Câu 1, Câu 2... trước mỗi ảnh.');
+ const unmatched=[...new Set(labels)].filter(n=>!entries.some(e=>e.number===n));
+ if(unmatched.length)throw Error(`Thiếu ảnh cho câu ${unmatched.join(', ')}. Chưa tải ảnh để tránh mất câu.`);
+ // Guard against silently dropping Word questions (including multi-answer headings).
+ const numbers=entries.map(e=>e.number).sort((a,b)=>a-b);
+ const missing:number[]=[];
+ for(let n=numbers[0];n<=numbers[numbers.length-1];n++)if(!numbers.includes(n))missing.push(n);
+ if(missing.length)throw Error(`Word có câu bị bỏ sót khi đọc: ${missing.join(', ')}. Chưa tải ảnh để tránh thiếu dữ liệu.`);
  if(entries.length>500)throw Error('Tối đa 500 câu ảnh mỗi lần tải.');
  const seen=new Set<number>();const result:WordImageItem[]=[];
  for(const entry of entries){

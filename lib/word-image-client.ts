@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import type {Choice} from './types';
 
-export type WordImageItem={number:number;image:Blob;mime:string;extension:string};
+export type WordImageItem={number:number;image:Blob;mime:string;extension:string;requiredAnswers?:number};
 const decode=(s:string)=>s.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');
 const getAttr=(tag:string,key:string)=>new RegExp(`${key}="([^"]+)"`).exec(tag)?.[1];
 const content=(xml:string)=>[...(xml.match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g)||[])].map(x=>decode(x.replace(/^<w:t[^>]*>/,'').replace(/<\/w:t>$/,''))).join('');
@@ -22,13 +22,13 @@ export async function readImageWord(file:File):Promise<WordImageItem[]>{
    links.set(id,path);
   }
  }
- const entries:{number:number;rid:string}[]=[];const labels:number[]=[];let current:number|null=null;
+ const entries:{number:number;rid:string;requiredAnswers?:number}[]=[];const labels:number[]=[];let current:number|null=null;let requiredAnswers:number|undefined;
  for(const para of paragraphs(xml)){
   const text=content(para).trim();
   const heading=text.match(/^(?:Câu|Question|Q)\s*(\d{1,4})(?=\s|[.):\-]|$)/i);
-  if(heading){current=Number(heading[1]);labels.push(current);}
+  if(heading){current=Number(heading[1]);labels.push(current);const count=/\(\s*Chọn\s*(\d+)\s*đáp\s*án\s*\)/i.exec(text);requiredAnswers=count?Number(count[1]):undefined;}
   for(const img of para.match(/<a:blip\b[^>]*\/?>/g)||[]){
-   const rid=getAttr(img,'r:embed');if(rid&&current!==null){entries.push({number:current,rid});current=null;}
+   const rid=getAttr(img,'r:embed');if(rid&&current!==null){entries.push({number:current,rid,requiredAnswers});current=null;requiredAnswers=undefined;}
   }
  }
  if(!entries.length)throw Error('Không tìm thấy nhãn Câu 1, Câu 2... trước mỗi ảnh.');
@@ -50,7 +50,7 @@ export async function readImageWord(file:File):Promise<WordImageItem[]>{
   if(!mime)throw Error(`Câu ${entry.number} có ảnh ${ext} chưa hỗ trợ. Hãy dùng PNG/JPG/WEBP.`);
   const bytes=await fileEntry.async('uint8array');
   if(bytes.length>3*1024*1024)throw Error(`Ảnh Câu ${entry.number} vượt 3 MB. Hãy nén riêng ảnh đó trong Word.`);
-  result.push({number:entry.number,image:new Blob([new Uint8Array(bytes)],{type:mime}),mime,extension:ext});
+  result.push({number:entry.number,image:new Blob([new Uint8Array(bytes)],{type:mime}),mime,extension:ext,requiredAnswers:entry.requiredAnswers});
  }
  return result;
 }

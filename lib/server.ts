@@ -20,7 +20,7 @@ export function safeQuestions(input:unknown):Question[]{
   const normalized=q.text.trim().toLowerCase().replace(/\s+/g,' ')+choices.map(c=>(options[c]||'').trim().toLowerCase()).join('|');
   if(seen.has(normalized))return null;
   seen.add(normalized);
-  return {id:typeof q.id==='string'&&q.id.length<100?q.id:randomUUID(),number:Number(q.number)||i+1,text:q.text.trim(),options:Object.fromEntries(CHOICES.map(c=>[c,(options[c]||'').trim()])) as Record<Choice,string>,answer:answers,multiple:Boolean(q.multiple)||answers.length>1,imageUrl:q.imageUrl};
+  return {id:typeof q.id==='string'&&q.id.length<100?q.id:randomUUID(),number:Number(q.number)||i+1,text:q.text.trim(),options:Object.fromEntries(CHOICES.map(c=>[c,(options[c]||'').trim()])) as Record<Choice,string>,answer:answers,multiple:Boolean(q.multiple)||answers.length>1,imageUrl:q.imageUrl,...(Number.isInteger(q.requiredAnswers)&&Number(q.requiredAnswers)>=1&&Number(q.requiredAnswers)<=8?{requiredAnswers:q.requiredAnswers}:{})};
  }).filter((x):x is Question=>x!==null);
 }
 export function toDeck(data:Record<string,unknown>):Deck{return {id:String(data.id),title:String(data.title),subject:String(data.subject),createdAt:String(data.created_at),questions:data.questions as Question[]};}

@@ -65,3 +65,16 @@ html[data-theme="dark"] .question-image{background:white;border-color:#526179}
 @media(max-width:550px){.image-lightbox{padding:7px}.image-lightbox-toolbar{gap:5px;padding:7px}.image-lightbox-toolbar button{width:34px;height:34px}.image-lightbox-tip{font-size:11px}}
 
 .image-option-config{padding:12px;margin:10px 0;border:1px solid #adb4d9;border-radius:12px;background:rgba(110,112,220,.07)}.image-option-config .row{margin:10px 0;gap:18px}.image-option-config label{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.image-option-config select{min-width:110px}.image-option-config p{margin:8px 0}
+
+/* V19: inline images in JSON choices */
+.choice-content{display:inline-flex;flex-direction:column;align-items:flex-start;min-width:0;gap:6px}
+.choice-picture{display:block;max-width:min(100%,420px);max-height:260px;object-fit:contain;border-radius:8px;background:#fff}
+.review-option .choice-picture{max-width:280px;max-height:180px;margin:8px 0}
+.choice-zoom-list{margin:12px 0;padding:10px 14px;border:1px solid var(--border,#ddd);border-radius:10px}
+.choice-image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:12px 0}
+.choice-image-grid .image-zoom-trigger{max-width:100%}
+.option-editor-content{display:flex;flex:1;flex-direction:column;gap:8px;min-width:0}
+.option-editor-content input:not([type=file]){width:100%;min-width:0}
+.small-upload{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600}
+.small-upload input{max-width:215px;font-size:12px}
+.option-editor-content .image-zoom-trigger{max-width:280px}

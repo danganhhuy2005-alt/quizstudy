@@ -3,6 +3,8 @@ import {randomUUID} from 'node:crypto';
 import type {Deck,Question,Choice} from './types';
 import {CHOICES,answerOf} from './types';
 const choices:readonly string[]=CHOICES;
+const isImageOption=(v:string)=>/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(v);
+const validOption=(v:unknown)=>typeof v==='string'&&(v.length<=4000||(v.length<=410000&&isImageOption(v)));
 export function database(){
  const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
  const key=process.env.SUPABASE_ANON_KEY;
@@ -15,7 +17,8 @@ export function safeQuestions(input:unknown):Question[]{
  return input.map<Question|null>((raw,i)=>{
   const q=raw as Partial<Question>;
   const options=q?.options as Record<string,string> | undefined;
-  if(!q||typeof q.text!=='string'||!q.text.trim()||q.text.length>8000||!options||!choices.some(c=>typeof options[c]==='string'&&options[c].trim())||choices.some(c=>options[c]!==undefined&&(typeof options[c]!=='string'||options[c].length>4000))||(q.imageUrl!==undefined&&(typeof q.imageUrl!=='string'||!q.imageUrl.startsWith((process.env.NEXT_PUBLIC_SUPABASE_URL||'')+'/storage/v1/object/public/quiz-images/'))))throw Error(`Câu ${i+1} thiếu nội dung hoặc không có lựa chọn hợp lệ.`);
+  if(!q||typeof q.text!=='string'||!q.text.trim()||q.text.length>8000||!options||!choices.some(c=>typeof options[c]==='string'&&options[c].trim())||choices.some(c=>options[c]!==undefined&&!validOption(options[c]))||(q.imageUrl!==undefined&&(typeof q.imageUrl!=='string'||!q.imageUrl.startsWith((process.env.NEXT_PUBLIC_SUPABASE_URL||'')+'/storage/v1/object/public/quiz-images/'))))throw Error(`Câu ${i+1} thiếu nội dung hoặc không có lựa chọn hợp lệ.`);
+  if(choices.reduce((sum,c)=>sum+(options[c]?.length||0),0)>2800000)throw Error(`Câu ${i+1}: ảnh Base64 quá lớn.`);
   const answers=answerOf(q as Question).filter(a=>options[a]?.trim());
   const normalized=q.text.trim().toLowerCase().replace(/\s+/g,' ')+choices.map(c=>(options[c]||'').trim().toLowerCase()).join('|');
   if(seen.has(normalized))return null;

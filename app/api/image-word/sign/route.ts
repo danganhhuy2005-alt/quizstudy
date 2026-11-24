@@ -6,7 +6,7 @@ export async function POST(req:NextRequest){
  try{
   const body=await req.json() as {mime?:string;extension?:string};
   const mime=body.mime;const ext=body.extension?.toLowerCase();
-  const allowed:Record<string,string>={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp'};
+  const allowed:Record<string,string>={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif'};
   if(!ext||!mime||allowed[ext]!==mime)return NextResponse.json({error:'Ảnh không đúng định dạng.'},{status:400});
   const db=database();const path=`${randomUUID()}.${ext}`;
   const {data,error}=await db.storage.from('quiz-images').createSignedUploadUrl(path);
